@@ -4,6 +4,7 @@
 export default {
   name: "Castle Stair",
   hint: "Climb to the great torch.",
+  theme: "castle",
   ambient: 0.9,
   dark: [[1,24,50,28]],
   wind: {"gust":1.8,"calm":2.6},

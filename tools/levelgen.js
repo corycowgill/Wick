@@ -80,7 +80,7 @@ function write(n, meta, g) {
   g.ground(101, 106, 15).put(103, 14, 'b');
   g.ground(107, 131, 13).put(125, 12, 'G');
   g.sign(114, 12, 'Light the great torch to finish the street.');
-  write(1, { name: 'Market Row', hint: 'Your wax is your light. Reach the torch.', extra: { ambient: 0.74 } }, g);
+  write(1, { name: 'Market Row', hint: 'Your wax is your light. Reach the torch.', extra: { theme: 'dusk', ambient: 0.74 } }, g);
 }
 
 // ---------------------------------------------------------------- Level 2
@@ -107,7 +107,7 @@ function write(n, meta, g) {
   g.ground(134, 151, 15).put(146, 14, 'G').put(139, 14, 'h').put(141, 14, 'b');
   write(2, {
     name: 'Pumpkin Lane', hint: 'Pumpkins glow with spare wax.',
-    extra: { ambient: 0.86, dark: [[41, 52], [99, 114]] },
+    extra: { theme: 'harvest', ambient: 0.86, dark: [[41, 52], [99, 114]] },
   }, g);
 }
 
@@ -132,7 +132,7 @@ function write(n, meta, g) {
   g.ground(101, 109, 13);
   g.ground(110, 141, 9).put(133, 8, 'G').put(120, 8, 'n');
   g.sign(105, 12, 'Wax spent is light lost. Build only what you need.');
-  write(3, { name: 'Drip Step', hint: 'Spend wax to build.', extra: { ambient: 0.84 } }, g);
+  write(3, { name: 'Drip Step', hint: 'Spend wax to build.', extra: { theme: 'violet', ambient: 0.84 } }, g);
 }
 
 // ---------------------------------------------------------------- Level 4
@@ -163,7 +163,7 @@ function write(n, meta, g) {
   g.entities.push({ type: 'wind', phase: 0 }, { type: 'wind', phase: 1.6 }, { type: 'wind', phase: 3.1 });
   write(4, {
     name: 'The Windy Bridge', hint: 'Time your runs between gusts.',
-    extra: { ambient: 0.82, wind: { dir: -1, gust: 1.9, calm: 2.6 } },
+    extra: { theme: 'wind', ambient: 0.82, wind: { dir: -1, gust: 1.9, calm: 2.6 } },
   }, g);
 }
 
@@ -196,7 +196,7 @@ function write(n, meta, g) {
   g.rect(131, 7, 133, 7, '~');
   write(5, {
     name: 'Rain Alley', hint: 'Wait for the drips to pause.',
-    extra: { ambient: 0.88, dark: [[44, 82], [110, 128]] },
+    extra: { theme: 'rain', ambient: 0.88, dark: [[44, 82], [110, 128]] },
   }, g);
 }
 
@@ -241,7 +241,7 @@ function write(n, meta, g) {
   g.rect(26, 8, 40, 8, 'f');
   g.sign(30, 10, 'Jump to reach the fuse.');
   g.put(8, 10, 'G').put(14, 10, 'h').put(16, 10, 'b');
-  write(6, { name: 'Hay Maze', hint: 'Burn a path open.', extra: { ambient: 0.88 } }, g);
+  write(6, { name: 'Hay Maze', hint: 'Burn a path open.', extra: { theme: 'barn', ambient: 0.88 } }, g);
 }
 
 // ---------------------------------------------------------------- Level 7
@@ -281,7 +281,7 @@ function write(n, meta, g) {
   g.sign(160, 17, 'One last climb. Build it.');
   write(7, {
     name: 'Cold Quarter', hint: 'Every drop of wax counts.',
-    extra: { ambient: 0.93, dark: [[51, 76], [101, 135]], wind: { dir: -1, gust: 1.8, calm: 2.8 } },
+    extra: { theme: 'cold', ambient: 0.93, dark: [[51, 76], [101, 135]], wind: { dir: -1, gust: 1.8, calm: 2.8 } },
   }, g);
 }
 
@@ -322,6 +322,6 @@ function write(n, meta, g) {
   g.entities.push({ type: 'wind', dir: 1, phase: 0 }, { type: 'wind', dir: -1, phase: 1.2 });
   write(8, {
     name: 'Castle Stair', hint: 'Climb to the great torch.',
-    extra: { ambient: 0.9, dark: [[1, 24, 50, 28]], wind: { gust: 1.8, calm: 2.6 }, finale: true },
+    extra: { theme: 'castle', ambient: 0.9, dark: [[1, 24, 50, 28]], wind: { gust: 1.8, calm: 2.6 }, finale: true },
   }, g);
 }

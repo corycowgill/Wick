@@ -200,8 +200,12 @@ export const UI = {
     ctx.fillText(`Wax drips placed: ${stats.drips}`, W / 2, H * 0.66);
     const a = 0.55 + 0.45 * Math.sin(time * 3);
     ctx.font = `700 20px ${SANS}`;
-    ctx.fillStyle = `rgba(255,214,140,${a})`;
-    ctx.fillText(device === 'touch' ? 'Tap to return to the title' : 'Press to return to the title', W / 2, H * 0.82);
+    const msg = device === 'touch' ? 'Tap to return to the title' : 'Press to return to the title';
+    ctx.lineWidth = 5; ctx.lineJoin = 'round';
+    ctx.strokeStyle = 'rgba(28,13,42,0.85)';
+    ctx.strokeText(msg, W / 2, H * 0.82);
+    ctx.fillStyle = `rgba(255,214,140,${0.6 + 0.4 * a})`;
+    ctx.fillText(msg, W / 2, H * 0.82);
     this.menuRects = [{ x: 0, y: 0, w: W, h: H }];
   },
 

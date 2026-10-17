@@ -4,6 +4,7 @@
 export default {
   name: "Cold Quarter",
   hint: "Every drop of wax counts.",
+  theme: "cold",
   ambient: 0.93,
   dark: [[51,76],[101,135]],
   wind: {"dir":-1,"gust":1.8,"calm":2.8},

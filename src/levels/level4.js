@@ -4,6 +4,7 @@
 export default {
   name: "The Windy Bridge",
   hint: "Time your runs between gusts.",
+  theme: "wind",
   ambient: 0.82,
   wind: {"dir":-1,"gust":1.9,"calm":2.6},
   tiles: [

@@ -4,6 +4,7 @@
 export default {
   name: "Pumpkin Lane",
   hint: "Pumpkins glow with spare wax.",
+  theme: "harvest",
   ambient: 0.86,
   dark: [[41,52],[99,114]],
   tiles: [

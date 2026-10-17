@@ -4,6 +4,7 @@
 export default {
   name: "Market Row",
   hint: "Your wax is your light. Reach the torch.",
+  theme: "dusk",
   ambient: 0.74,
   tiles: [
     '....................................................................................................................................',

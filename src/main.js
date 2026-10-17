@@ -6,7 +6,10 @@ import { Player } from './player.js';
 import { createWorld } from './level.js';
 import { Camera } from './render/camera.js';
 import { Lighting } from './render/lighting.js';
-import { drawBackground, drawTiles, drawProps, drawEntities, drawSignPosts, drawSignText } from './render/draw-world.js';
+import {
+  drawBackground, drawTiles, drawProps, drawEntities, drawSignPosts, drawSignText,
+  drawTileGlows, drawMist, drawForeground, themeOf,
+} from './render/draw-world.js';
 import { drawWick } from './render/draw-wick.js';
 import { Particles } from './render/particles.js';
 import { Audio } from './audio.js';
@@ -291,7 +294,7 @@ function update(dt) {
   }
 
   camera.update(dt, player, world);
-  P.ambient(dt, camera, world);
+  P.ambient(dt, camera, world, !!themeOf(world).leaves);
   if (player.alive) {
     const f = player.flamePos();
     const rate = 10 + 18 * player.waxFrac();
@@ -340,18 +343,21 @@ function renderPlay(t) {
   drawEntities(ctx, cam, world, t);
   P.draw(ctx, 'world');
   drawWick(ctx, player, t);
+  drawMist(ctx, cam, world, t);
   ctx.restore();
 
   Lighting.render(ctx, world, player, camera, lights, t);
 
   ctx.save();
   ctx.translate(-cam.x, -cam.y);
+  drawTileGlows(ctx);
   ctx.globalCompositeOperation = 'lighter';
   P.draw(ctx, 'glow');
   ctx.globalCompositeOperation = 'source-over';
   drawSignText(ctx, cam, world, player, UI.glyphs(Input.lastDevice));
   P.draw(ctx, 'fg');
   ctx.restore();
+  drawForeground(ctx, cam, world, t);
 
   if (state.flash > 0) {
     ctx.save();

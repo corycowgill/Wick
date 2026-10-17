@@ -100,9 +100,9 @@ export class Particles {
   }
 
   // ambient falling maple leaves and wind swirls
-  ambient(dt, cam, world) {
+  ambient(dt, cam, world, leaves = true) {
     this.ambientTimer -= dt;
-    if (this.ambientTimer <= 0) {
+    if (leaves && this.ambientTimer <= 0) {
       this.ambientTimer = 0.35 + Math.random() * 0.5;
       const fg = Math.random() < 0.25;
       this.leaf(cam.x + Math.random() * cam.w * 1.2, cam.y - 20, 15 + Math.random() * 25, 20 + Math.random() * 20, fg);
@@ -202,14 +202,16 @@ export class Particles {
   }
 }
 
-// little maple leaf: five points
+// a pointed leaf with a centre vein (reads as a leaf even when tiny)
 function drawLeaf(ctx, s) {
   ctx.beginPath();
-  for (let i = 0; i < 10; i++) {
-    const a = (i / 10) * Math.PI * 2 - Math.PI / 2;
-    const r = i % 2 === 0 ? s : s * 0.45;
-    ctx.lineTo(Math.cos(a) * r, Math.sin(a) * r);
-  }
-  ctx.closePath();
+  ctx.moveTo(-s, 0);
+  ctx.quadraticCurveTo(-s * 0.2, -s * 0.75, s, 0);
+  ctx.quadraticCurveTo(-s * 0.2, s * 0.75, -s, 0);
   ctx.fill();
+  if (s > 3) {
+    ctx.strokeStyle = 'rgba(60,20,20,0.55)';
+    ctx.lineWidth = 0.8;
+    ctx.beginPath(); ctx.moveTo(-s * 1.25, 0); ctx.lineTo(s * 0.8, 0); ctx.stroke();
+  }
 }

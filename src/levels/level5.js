@@ -4,6 +4,7 @@
 export default {
   name: "Rain Alley",
   hint: "Wait for the drips to pause.",
+  theme: "rain",
   ambient: 0.88,
   dark: [[44,82],[110,128]],
   tiles: [
