@@ -15,6 +15,7 @@ const GLYPHS = {
 
 export const UI = {
   menuRects: [],
+  SELECT_COLS: 4,
   toasts: [],
 
   glyphs(device) { return GLYPHS[device] || GLYPHS.keyboard; },
@@ -209,6 +210,78 @@ export const UI = {
     ctx.fillStyle = `rgba(255,214,140,${0.6 + 0.4 * a})`;
     ctx.fillText(msg, W / 2, H * 0.82);
     this.menuRects = [{ x: 0, y: 0, w: W, h: H }];
+  },
+
+  // ---------------------------------------------------------------- level select
+  drawSelect(ctx, time, levels, reached, sel, device) {
+    drawBackground(ctx, { x: time * 20, y: 0, w: W, h: H }, TITLE_WORLD, time);
+    ctx.fillStyle = 'rgba(14,6,28,0.55)'; ctx.fillRect(0, 0, W, H);
+    ctx.textAlign = 'center'; ctx.textBaseline = 'middle';
+    titleText(ctx, 'Choose a level', W / 2, 62, 42);
+    const cols = this.SELECT_COLS, cw = 200, ch = 92, gap = 14;
+    const rows = Math.ceil(levels.length / cols);
+    const x0 = W / 2 - (cols * cw + (cols - 1) * gap) / 2, y0 = 112;
+    this.menuRects = [];
+    levels.forEach((L, i) => {
+      const cx = x0 + (i % cols) * (cw + gap), cy = y0 + Math.floor(i / cols) * (ch + gap);
+      const r = { x: cx, y: cy, w: cw, h: ch };
+      this.menuRects.push(r);
+      const open = reached.has(L.name), on = i === sel;
+      ctx.fillStyle = on ? 'rgba(232,140,50,0.92)' : open ? 'rgba(50,26,70,0.9)' : 'rgba(30,16,40,0.75)';
+      roundRect(ctx, cx, cy, cw, ch, 12); ctx.fill();
+      ctx.strokeStyle = on ? '#ffe2a0' : open ? 'rgba(217,166,64,0.65)' : 'rgba(120,90,130,0.4)';
+      ctx.lineWidth = 2; ctx.stroke();
+      ctx.font = `700 13px ${SANS}`;
+      ctx.fillStyle = on ? '#2a1630' : open ? '#e8b03a' : 'rgba(200,180,200,0.45)';
+      ctx.fillText(`LEVEL ${i + 1}`, cx + cw / 2, cy + 24);
+      ctx.font = `700 18px ${SERIF}`;
+      ctx.fillStyle = on ? '#2a1630' : open ? '#fbe9c8' : 'rgba(200,180,200,0.45)';
+      ctx.fillText(open ? L.name : 'Locked', cx + cw / 2, cy + 50);
+      ctx.font = `italic 12px ${SERIF}`;
+      ctx.fillStyle = on ? 'rgba(42,22,48,0.85)' : 'rgba(251,233,200,0.6)';
+      if (open) ctx.fillText(L.hint, cx + cw / 2, cy + 72);
+      if (!open) {
+        // a little padlock
+        ctx.strokeStyle = 'rgba(200,180,200,0.45)'; ctx.lineWidth = 2;
+        ctx.beginPath(); ctx.arc(cx + cw / 2, cy + 70, 5, Math.PI, 0); ctx.stroke();
+        ctx.fillStyle = 'rgba(200,180,200,0.45)'; ctx.fillRect(cx + cw / 2 - 7, cy + 70, 14, 10);
+      }
+    });
+    // back button
+    const by = y0 + rows * (ch + gap) + 6;
+    const back = { x: W / 2 - 80, y: by, w: 160, h: 36 };
+    this.menuRects.push(back);
+    ctx.fillStyle = 'rgba(50,26,70,0.9)'; roundRect(ctx, back.x, back.y, back.w, back.h, 10); ctx.fill();
+    ctx.strokeStyle = 'rgba(217,166,64,0.6)'; ctx.lineWidth = 2; ctx.stroke();
+    ctx.font = `600 16px ${SANS}`; ctx.fillStyle = '#fbe9c8';
+    ctx.fillText(device === 'gamepad' ? '\u24b7 Back' : device === 'touch' ? 'Back' : 'Esc  Back', W / 2, by + 19);
+  },
+
+  // ---------------------------------------------------------------- level complete card
+  drawCompleteCard(ctx, world, index, stats, shown, left) {
+    const a = clamp(Math.min((shown - 0.5) / 0.35, (left + 0.3) / 0.4), 0, 1);
+    if (a <= 0) return;
+    const rise = (1 - Math.min(1, (shown - 0.5) / 0.35)) * 24;
+    ctx.save();
+    ctx.globalAlpha = a;
+    ctx.translate(0, rise);
+    const w = 380, h = 170, x = W / 2 - w / 2, y = H * 0.3;
+    ctx.fillStyle = 'rgba(28,12,40,0.9)'; roundRect(ctx, x, y, w, h, 16); ctx.fill();
+    ctx.strokeStyle = '#d9a640'; ctx.lineWidth = 2.5; ctx.stroke();
+    ctx.textAlign = 'center'; ctx.textBaseline = 'middle';
+    ctx.font = `700 14px ${SANS}`; ctx.fillStyle = '#e8b03a';
+    ctx.fillText(`LEVEL ${index + 1} LIT`, W / 2, y + 26);
+    titleText(ctx, world.name, W / 2, y + 60, 32);
+    const col = (cx, label, value) => {
+      ctx.font = `600 12px ${SANS}`; ctx.fillStyle = 'rgba(251,233,200,0.65)';
+      ctx.fillText(label, cx, y + 104);
+      ctx.font = `700 22px ${SANS}`; ctx.fillStyle = '#ffd690';
+      ctx.fillText(value, cx, y + 132);
+    };
+    col(W / 2 - 120, 'TIME', fmtTime(stats.time));
+    col(W / 2, 'WAX LEFT', `${Math.round(stats.wax)}%`);
+    col(W / 2 + 120, 'DEATHS', String(stats.deaths));
+    ctx.restore();
   },
 
   drawToasts(ctx) {

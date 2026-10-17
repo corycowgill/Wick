@@ -3,8 +3,10 @@
 // input programs (walks, jumps, drip steps, pillars, bridges). The search
 // maximises remaining wax, tracking which torches and pumpkins were used.
 //
-// Simplification: wind gusts and drip columns are timing hazards and are
-// switched off for the bot (it measures geometry and wax budget only).
+// By default wind gusts and drip columns are switched off (geometry and wax budget
+// only). With { hazards: true } they run on the real clock, the bot gets "wait"
+// moves to time them, fuses burn at their real speed, and with { record: true }
+// every move's inputs are kept so the route can be replayed in the actual game.
 import { CFG } from '../src/config.js';
 import { createWorld } from '../src/level.js';
 import { Player } from '../src/player.js';
@@ -111,8 +113,11 @@ function seq(progs) {
   };
 }
 
-export function programs({ drip = true } = {}) {
+const wait = (frames) => (p, w, f) => (f < frames ? inp() : null);
+
+export function programs({ drip = true, hazards = false } = {}) {
   const list = [];
+  if (hazards) for (const n of [20, 45, 90]) list.push(['wait' + n, wait(n), 0]);
   for (const d of [-1, 1]) list.push(['walk' + d, walk(d), 0]);
   list.push(['jump0', jump(0, 9), 0], ['hop0', jump(0, 0.15), 0]);
   for (const d of [-1, 1]) {
@@ -152,31 +157,40 @@ function standingOnPermanent(p, w) {
 export function search(levelData, opts = {}) {
   Events.muted = true;
   const world = createWorld(levelData);
-  world.windAt = () => 0;
-  world.wetAt = () => false;
+  // hazard mode only matters where something runs on a clock: wind, rain, fire
+  const timed = world.entities.some((e) => e.type === 'wind' || e.type === 'drip') || world.flammables.size > 0;
+  const HZ = !!opts.hazards && timed;
+  if (!HZ) {
+    world.windAt = () => 0;
+    world.wetAt = () => false;
+  }
   const player = new Player();
   let arrivalWax = null;
   const origRefill = player.refill.bind(player);
   player.refill = (a) => { if (a === CFG.TORCH_REFILL) arrivalWax = player.wax; origRefill(a); };
-  const progs = programs({ drip: opts.drip !== false });
+  const progs = programs({ drip: opts.drip !== false, hazards: HZ });
   const nT = world.torches.length, nP = world.pumpkins.length;
 
   // fuse/gate handling: gates opened by any fuse the bot has lit stay open
-  const opened = new Set();
-  const applyOpened = () => {
+  // opened: flammable -> time it is gone (Infinity until lit). Without hazards, gone at once.
+  const opened = new Map();
+  const applyOpened = (now = Infinity) => {
     for (const f of world.flammables.values()) {
-      if (opened.has(f)) { f.state = 'gone'; if (f.solid) world.clearCell(f.tx, f.ty); }
+      const at = opened.get(f);
+      if (at !== undefined && now >= at) { f.state = 'gone'; if (f.solid) world.clearCell(f.tx, f.ty); }
     }
   };
-  const openNetwork = (start) => {
-    const stack = [start];
-    while (stack.length) {
-      const f = stack.pop();
-      if (opened.has(f)) continue;
-      opened.add(f);
+  const openNetwork = (start, t0 = 0) => {
+    // breadth-first along the network so each cell burns out after the fire reaches it
+    const q = [[start, t0]];
+    const seen = new Set([start]);
+    while (q.length) {
+      const [f, t] = q.shift();
+      const gone = HZ ? t + f.burn : 0;
+      if (!opened.has(f) || opened.get(f) > gone) opened.set(f, gone);
       for (const [dx, dy] of [[1, 0], [-1, 0], [0, 1], [0, -1]]) {
         const n = world.flammables.get((f.ty + dy) * world.w + f.tx + dx);
-        if (n && !opened.has(n)) stack.push(n);
+        if (n && !seen.has(n)) { seen.add(n); q.push([n, t + f.spread]); }
       }
     }
   };
@@ -192,7 +206,9 @@ export function search(levelData, opts = {}) {
   const torchHits = [];
   let sims = 0;
 
-  const keyOf = (s) => `${Math.floor((s.x + CFG.BODY_W / 2) / T)},${Math.round(s.feet / T)},${s.pm},${s.tm}`;
+  // with hazards the clock matters too (coarse phase bucket)
+  const keyOf = (s) => `${Math.floor((s.x + CFG.BODY_W / 2) / T)},${Math.round(s.feet / T)},${s.pm},${s.tm}` +
+    (HZ ? `,${Math.floor(s.time) % 20}` : '');
   const push = (s) => {
     const k = keyOf(s);
     const b = best.get(k);
@@ -202,7 +218,7 @@ export function search(levelData, opts = {}) {
   };
   push({ x: start.x, feet: start.feet, wax: start.wax, pm: startPump, tm: startTorch, time: 0, parent: null, act: 'start', arrivals: [] });
 
-  const maxStates = opts.maxStates || 60000;
+  const maxStates = opts.maxStates || (HZ ? 200000 : 60000);
   let expanded = 0;
   let restart = false;
 
@@ -213,7 +229,8 @@ export function search(levelData, opts = {}) {
 
     for (const [name, prog, cost] of progs) {
       world.restore(base);
-      applyOpened();
+      applyOpened(HZ ? s.time : Infinity);
+      if (HZ) for (const [e, t0] of base.ent) e.t = (t0 + s.time) % e.period;   // hazards on the real clock
       world.torches.forEach((t, i) => { t.lit = !!(s.tm & (1 << i)); });
       world.pumpkins.forEach((pk, i) => { pk.taken = !!(s.pm & (1 << i)); });
       player.spawn(s.x + CFG.BODY_W / 2, s.feet, s.wax);
@@ -226,21 +243,25 @@ export function search(levelData, opts = {}) {
       let f = 0, done = false, ok = false;
       sims++;
       const ignitedFuses = [];
-      world.onIgnite = (fl) => { if (fl.type === 'fuse') ignitedFuses.push(fl); };
+      world.onIgnite = (fl) => { if (fl.type === 'fuse') ignitedFuses.push([fl, s.time + f * DT]); };
+      const rec = opts.record ? [] : null;
       while (f < 60 * 6) {
         const input = done ? inp() : prog(player, world, f, mem);
         if (!input) { done = true; }
-        player.update(DT, input || inp(), world);
+        const i = input || inp();
+        if (rec) rec.push(Math.round(i.moveX * 100), (i.jumpHeld ? 1 : 0) | (i.jumpPressed ? 2 : 0) | (i.dripPressed ? 4 : 0) | (i.reabsorbPressed ? 8 : 0));
+        player.update(DT, i, world);
         world.update(DT, player);
         f++;
         if (!player.alive) break;
         if (world.complete) { ok = true; break; }
-        if (done && player.onGround && player.vy === 0) { ok = true; break; }
+        // settled: on the ground and at rest, so the next move starts exactly where this one ended
+        if (done && player.onGround && player.vy === 0 && (!rec || (Math.abs(player.vx) < 1 && Math.abs(player.windVx) < 1))) { ok = true; break; }
       }
       if (ignitedFuses.length) {
-        const before = opened.size;
-        for (const fl of ignitedFuses) openNetwork(fl);
-        if (opened.size !== before) restart = true;
+        const before = [...opened.values()].join();
+        for (const [fl, t] of ignitedFuses) openNetwork(fl, t);
+        if ([...opened.values()].join() !== before) restart = true;
       }
       if (!ok || !player.alive) continue;
 
@@ -248,7 +269,7 @@ export function search(levelData, opts = {}) {
       const pm = world.pumpkins.reduce((m, pk, i) => m | (pk.taken ? 1 << i : 0), 0);
       const ns = {
         x: player.x, feet: player.feet, wax: player.wax, pm, tm,
-        time: s.time + f * DT, parent: s, act: name,
+        time: s.time + f * DT, parent: s, act: name, frames: rec ? Int8Array.from(rec) : null,
         arrivals: arrivalWax !== null ? [...s.arrivals, Math.round(arrivalWax)] : s.arrivals,
       };
       if (world.complete) {
@@ -266,9 +287,11 @@ export function search(levelData, opts = {}) {
     if (restart) {
       // a fuse opened new gates: rebuild the base state and requeue everything
       restart = false;
-      world.restore(base);
-      applyOpened();
-      base = world.snapshot();
+      if (!HZ) {
+        world.restore(base);
+        applyOpened();
+        base = world.snapshot();
+      }
       for (const st of best.values()) heapPush(queue, st);
     }
     if (goalHit && opts.firstHit) break;
@@ -311,4 +334,13 @@ function heapPop(h) {
     }
   }
   return top;
+}
+
+// Concatenate the recorded inputs of a route into one replayable Int8Array.
+export function routeFrames(goal) {
+  const parts = pathOf(goal).map((s) => s.frames).filter(Boolean);
+  const out = new Int8Array(parts.reduce((n, p) => n + p.length, 0));
+  let o = 0;
+  for (const p of parts) { out.set(p, o); o += p.length; }
+  return out;
 }

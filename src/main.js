@@ -55,15 +55,42 @@ const state = {
   rotateBlock: false,
   standalone: window.navigator.standalone === true || matchMedia('(display-mode: standalone)').matches,
   frameMs: 0,
+  intro: false,            // the studio intro is playing over the title
   slowFrames: 0,
 };
 
 // ---------------------------------------------------------------- persistence
+// Progress is stored by level name, so reordering or adding levels never breaks a save.
 function loadProgress() {
-  try { return Math.min(LEVELS.length - 1, parseInt(localStorage.getItem('wick.level') || '0', 10) || 0); } catch { return 0; }
+  let d = null;
+  try { d = JSON.parse(localStorage.getItem('wick.progress') || 'null'); } catch { /* storage blocked */ }
+  if (!d || !Array.isArray(d.reached)) {
+    // migrate the old numeric save
+    let i = 0;
+    try { i = parseInt(localStorage.getItem('wick.level') || '0', 10) || 0; } catch { /* storage blocked */ }
+    i = Math.max(0, Math.min(LEVELS.length - 1, i));
+    d = { current: LEVELS[i].name, reached: LEVELS.slice(0, i + 1).map((l) => l.name) };
+  }
+  return d;
 }
+function storeProgress(d) {
+  try { localStorage.setItem('wick.progress', JSON.stringify(d)); } catch { /* storage blocked */ }
+}
+function progressIndex() {
+  const i = LEVELS.findIndex((l) => l.name === loadProgress().current);
+  return i < 0 ? 0 : i;
+}
+function reachedSet() { return new Set(loadProgress().reached); }
 function saveProgress(i) {
-  try { localStorage.setItem('wick.level', String(i)); } catch { /* storage blocked */ }
+  const d = loadProgress();
+  d.current = LEVELS[i].name;
+  if (!d.reached.includes(d.current)) d.reached.push(d.current);
+  storeProgress(d);
+}
+function finishedGame() {
+  const d = loadProgress();
+  d.current = LEVELS[0].name;
+  storeProgress(d);
 }
 
 // ---------------------------------------------------------------- canvas sizing
@@ -173,7 +200,9 @@ Events.on('levelComplete', (e) => {
   state.fireworkTimer = 0.3;
   state.flash = 1.6;
   state.hitStop = 4;
-  state.completeTimer = CFG.GOAL_DELAY + (state.world.data.finale ? 1.5 : 0);
+  state.completeTimer = CFG.GOAL_DELAY + 0.9 + (state.world.data.finale ? 1.5 : 0);
+  state.completeMax = state.completeTimer;
+  state.levelStats.wax = state.player.wax;
   Input.gamepad.rumble('relight');
 });
 
@@ -197,6 +226,7 @@ function startLevel(i) {
   Audio.music('play', i < 5 ? 'town' : 'night');
   Audio.ambience(themeOf(state.world).rain ? 'rain' : null);
   state.gusts = new Map();
+  state.levelStats = { time: 0, deaths: 0, wax: 0 };
 }
 
 function newGame(i = 0) {
@@ -215,8 +245,12 @@ function toTitle() {
 }
 
 function titleItems() {
-  const saved = loadProgress();
-  return saved > 0 ? [`Continue: ${LEVELS[saved].name}`, 'New game'] : ['Start'];
+  const i = progressIndex();
+  const items = [];
+  if (i > 0) items.push({ label: `Continue: ${LEVELS[i].name}`, act: () => newGame(i) });
+  items.push({ label: i > 0 ? 'New game' : 'Start', act: () => newGame(0) });
+  if (reachedSet().size > 1) items.push({ label: 'Choose level', act: () => { state.scene = 'select'; state.sel = i; } });
+  return items;
 }
 
 function pauseItems() {
@@ -248,6 +282,7 @@ function update(dt) {
   if (input.mutePressed) Audio.toggleMute();
 
   if (state.scene === 'title') {
+    if (state.intro) { state.tap = null; return; }   // presses belong to the intro (skip)
     if (!state.titleMenu) {
       if (input.anyPressed || state.tap) {
         state.tap = null;
@@ -260,9 +295,25 @@ function update(dt) {
     }
     const items = titleItems();
     const c = navMenu(items.length);
-    if (c >= 0) {
-      if (items.length === 2 && c === 0) newGame(loadProgress());
-      else newGame(0);
+    if (c >= 0) items[c].act();
+    return;
+  }
+
+  if (state.scene === 'select') {
+    const n = LEVELS.length, cols = UI.SELECT_COLS;
+    const reached = reachedSet();
+    const move = (d) => { state.sel = (state.sel + d + n) % n; Audio.sfx('menu'); };
+    if (input.leftPressed) move(-1);
+    if (input.rightPressed) move(1);
+    if (input.upPressed && state.sel - cols >= 0) move(-cols);
+    if (input.downPressed && state.sel + cols < n) move(cols);
+    let pick = -1;
+    if (state.tap) { pick = UI.hitTest(state.tap.x, state.tap.y); state.tap = null; if (pick >= 0) state.sel = pick; }
+    if (input.confirmPressed) pick = state.sel;
+    if (pick === UI.menuRects.length - 1 && pick >= n) pick = -2;     // the back button
+    if (input.backPressed || pick === -2) { state.scene = 'title'; state.titleMenu = true; state.sel = 0; Audio.sfx('menu'); return; }
+    if (pick >= 0) {
+      if (reached.has(LEVELS[pick].name)) { Audio.sfx('select'); newGame(pick); } else Audio.sfx('dripFail');
     }
     return;
   }
@@ -298,7 +349,7 @@ function update(dt) {
     if (state.completeTimer <= 0) {
       if (state.levelIndex + 1 < LEVELS.length) startLevel(state.levelIndex + 1);
       else {
-        saveProgress(0);
+        finishedGame();
         state.scene = 'end';
         state.endAt = state.time;
         Audio.music('end');
@@ -311,9 +362,11 @@ function update(dt) {
     player.update(dt, input, world);
     world.update(dt, player);
     state.stats.time += dt;
+    state.levelStats.time += dt;
     if (!player.alive) state.iris = Math.min(state.iris, Math.max(0, player.deathTimer / 0.45));
     if (!player.alive && player.deathTimer <= 0) {
       state.stats.deaths++;
+      state.levelStats.deaths++;
       respawn();
       state.iris = 0;
     }
@@ -378,8 +431,10 @@ function render() {
   const t = state.time;
   if (state.scene === 'title') {
     UI.drawTitle(ctx, t, Input.lastDevice, {
-      menu: state.titleMenu ? titleItems() : null, selected: state.sel, standalone: state.standalone,
+      menu: state.titleMenu ? titleItems().map((it) => it.label) : null, selected: state.sel, standalone: state.standalone,
     });
+  } else if (state.scene === 'select') {
+    UI.drawSelect(ctx, t, LEVELS, reachedSet(), state.sel, Input.lastDevice);
   } else if (state.scene === 'end') {
     UI.drawEnd(ctx, t, state.stats, Input.lastDevice);
   } else {
@@ -452,6 +507,8 @@ function renderPlay(t) {
   if (state.completeTimer > 0) {
     const k = Math.max(0, 1 - state.completeTimer / 0.6);
     if (k > 0) { ctx.fillStyle = `rgba(14,6,28,${k})`; ctx.fillRect(0, 0, W, H); }
+    const shown = state.completeMax - state.completeTimer;
+    if (!world.data.finale) UI.drawCompleteCard(ctx, world, state.levelIndex, state.levelStats, shown, state.completeTimer);
   }
   if (state.iris < 1) Post.iris(ctx, state.iris, player.cx - cam.x, player.y + player.h / 2 - cam.y);
   if (state.paused && !state.rotateBlock) {
@@ -481,6 +538,27 @@ function drawFlameTrail(ctx, player) {
   }
 }
 
+// ---------------------------------------------------------------- playtest replay (debug)
+// Feeds recorded bot inputs (pairs of moveX*100, flag bits) into the real game,
+// `speed` fixed steps per frame. Used by tools/playthrough.mjs.
+function playReplay() {
+  const r = state.replay;
+  for (let k = 0; k < r.speed; k++) {
+    const i = r.i;
+    const has = i * 2 + 1 < r.frames.length;
+    const mx = has ? r.frames[i * 2] / 100 : 0, fl = has ? r.frames[i * 2 + 1] : 0;
+    input.moveX = mx; input.left = mx < -0.3; input.right = mx > 0.3;
+    input.jumpHeld = !!(fl & 1); input.jumpPressed = !!(fl & 2);
+    input.dripPressed = !!(fl & 4); input.reabsorbPressed = !!(fl & 8);
+    input.pausePressed = input.restartPressed = input.mutePressed = false;
+    state.hitStop = 0;
+    const lvl = state.levelIndex;
+    update(CFG.STEP);
+    r.i++;
+    if (state.scene !== 'play' || state.levelIndex !== lvl) { r.finished = true; state.replay = null; return; }
+  }
+}
+
 // ---------------------------------------------------------------- loop
 let last = performance.now();
 let acc = 0;
@@ -488,14 +566,19 @@ function frame(now) {
   const dt = Math.min(0.25, (now - last) / 1000);
   last = now;
   acc += dt;
-  Input.poll();
-  let steps = 0;
-  while (acc >= CFG.STEP) {
-    update(CFG.STEP);
-    acc -= CFG.STEP;
-    steps++;
-    if (steps === 1) Input.consume();
-    if (steps >= 5) { acc = 0; break; }
+  if (state.replay) {
+    playReplay();
+    acc = 0;
+  } else {
+    Input.poll();
+    let steps = 0;
+    while (acc >= CFG.STEP) {
+      update(CFG.STEP);
+      acc -= CFG.STEP;
+      steps++;
+      if (steps === 1) Input.consume();
+      if (steps >= 5) { acc = 0; break; }
+    }
   }
   const showTouch = Input.lastDevice === 'touch' && state.scene === 'play' && !state.paused && !state.rotateBlock;
   Input.touch.show(showTouch);
@@ -516,7 +599,23 @@ if (params.has('level')) {
   newGame(n - 1);
 } else {
   Audio.music('title');
+  // Hallucinated Games studio intro before the title (skipped for test URLs)
+  const skipIntro = params.has('nointro') || DEBUG || !window.HallucinatedIntro;
+  if (!skipIntro) {
+    state.intro = true;
+    window.HallucinatedIntro.play({ sound: false })
+      .catch(() => {})
+      .then(() => { state.intro = false; });
+  }
 }
-window.WICK = { state, LEVELS, startLevel, Lighting, Audio };
+window.WICK = {
+  state, LEVELS, startLevel, Lighting, Audio,
+  // restart `level` and drive it with recorded inputs from the very first frame
+  replay(level, frames, speed = 1) {
+    newGame(level);
+    state.replay = { frames: Int8Array.from(frames), i: 0, speed, finished: false };
+    return true;
+  },
+};
 document.getElementById('boot').classList.add('hide');
 requestAnimationFrame(frame);

@@ -153,6 +153,7 @@ function write(n, meta, g) {
   g.rect(40, 12, 44, 16).put(42, 11, 'T');
   deck(49, 60);                                       // gap 45-48 (4)
   deck(64, 72);                                       // gap 61-63 (3)
+  g.put(68, 13, 'P');
   deck(77, 90);                                       // gap 73-76 (4)
   g.rect(84, 12, 88, 16).put(86, 11, 'T');
   deck(95, 104);                                      // gap 91-94 (4)
@@ -165,7 +166,7 @@ function write(n, meta, g) {
   g.entities.push({ type: 'wind', phase: 0 }, { type: 'wind', phase: 1.6 }, { type: 'wind', phase: 3.1 });
   define('windy', {
     name: 'The Windy Bridge', hint: 'Time your runs between gusts.',
-    extra: { theme: 'wind', ambient: 0.82, wind: { dir: -1, gust: 1.9, calm: 2.6 } },
+    extra: { theme: 'wind', ambient: 0.82, wind: { dir: -1, gust: 1.5, calm: 3.0 } },
   }, g);
 }
 
@@ -179,7 +180,7 @@ function write(n, meta, g) {
   g.rect(20, 7, 25, 7, '~').plat(22, 23, 13);                    // awning shelter
   g.sign(18, 15, 'Wait under the awning for the rain to pause.');
   g.put(31, 15, 'T').put(28, 15, 'b');
-  g.rect(36, 7, 39, 7, '~').put(43, 15, 'P');
+  g.rect(36, 7, 39, 7, '~');
   g.ground(54, 62, 13);                                          // 3 high: build
   g.sign(50, 15, 'Too high for a small flame? Build a step.');
   g.rect(56, 7, 58, 7, '~');
@@ -191,7 +192,6 @@ function write(n, meta, g) {
   g.ground(100, 104, 14).ground(105, 109, 12);
   g.rect(106, 7, 108, 7, '~');
   g.rect(112, 7, 117, 7, '~').plat(114, 115, 13);
-  g.put(121, 15, 'P');
   g.rect(123, 7, 126, 7, '~');
   g.ground(130, 149, 13).put(143, 12, 'G').put(137, 12, 'k');
   g.rect(131, 7, 133, 7, '~');
@@ -209,7 +209,6 @@ function write(n, meta, g) {
   g.sign(6, 22, 'Cobwebs burn away at a touch of flame.');
   g.rect(14, 18, 15, 22, 'w');
   g.put(20, 22, 'h').put(24, 22, 'h').put(25, 21, 'h');
-  g.put(30, 22, 'T');
   // staircase up to floor B
   g.ground(40, 40, 22).ground(41, 41, 21).ground(42, 42, 20).ground(43, 43, 19).ground(44, 44, 18);
   g.rect(45, 18, 57, 22);                               // packed hay under floor B
@@ -230,7 +229,7 @@ function write(n, meta, g) {
   // floor B east section, walked westward
   g.put(100, 16, 'T');
   g.rect(85, 12, 86, 16, 'w');
-  g.put(75, 16, 'P').put(92, 16, 'h');
+  g.put(92, 16, 'h');
   // climb to floor C through a hole in slab C
   g.rect(1, 11, 63, 11).rect(71, 11, 118, 11);          // slab C
   g.plat(66, 68, 15).plat(64, 66, 13);
@@ -270,7 +269,7 @@ function write(n, meta, g) {
   // dark pits
   g.ground(101, 109, 18);
   g.put(110, 20, '#');                                  // pit escape step
-  g.ground(115, 122, 18);
+  g.ground(115, 122, 18).put(118, 17, 'P');
   g.ground(127, 135, 18);
   g.put(123, 20, '#');
   // rain + wind run
@@ -323,7 +322,7 @@ function write(n, meta, g) {
   g.entities.push({ type: 'wind', dir: 1, phase: 0 }, { type: 'wind', dir: -1, phase: 1.2 });
   define('castle', {
     name: 'Castle Stair', hint: 'Climb to the great torch.',
-    extra: { theme: 'castle', ambient: 0.9, dark: [[1, 24, 50, 28]], wind: { gust: 1.8, calm: 2.6 }, finale: true },
+    extra: { theme: 'castle', ambient: 0.9, dark: [[1, 24, 50, 28]], wind: { gust: 1.4, calm: 3.0 }, finale: true },
   }, g);
 }
 
@@ -423,9 +422,9 @@ function write(n, meta, g) {
   g.sign(66, 18, 'Light the fuse and follow the fire.');
   g.ground(80, 82, 21).clear(80, 19, 82, 20);      // gaps between the gates
   g.ground(93, 96, 21).clear(93, 19, 96, 20);
-  g.put(110, 18, 'T');
   // 4. the stage: build up to the great fair torch
   g.ground(118, 141, 15).put(132, 14, 'G').put(124, 14, 'n').put(138, 14, 'n');
+  g.put(113, 18, 'P');
   g.sign(114, 18, 'The fair torch waits on the stage. Build your way up.');
   define('fair', {
     name: 'Ember Fair', hint: 'Let the fire do the work.',

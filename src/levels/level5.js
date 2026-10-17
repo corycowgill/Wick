@@ -6,7 +6,7 @@ export default {
   hint: "Time your runs between gusts.",
   theme: "wind",
   ambient: 0.82,
-  wind: {"dir":-1,"gust":1.9,"calm":2.6},
+  wind: {"dir":-1,"gust":1.5,"calm":3},
   tiles: [
     '..............................................................................................................................................',
     '..............................................................................................................................................',
@@ -21,7 +21,7 @@ export default {
     '.............WWWWWWWWWWWWWWWWWWWWWWWWWWW.....WWWWWWWWWWWWWWWWWWWWWWWWWWWWWWWWWWWWWWW.....WWWWWWWWWWWWWWWWWWWWWWWWWWWWWWWWWW...................',
     '.............WWWWWWWWWWWWWWWWWWWWWWWWWWW..T..WWWWWWWWWWWWWWWWWWWWWWWWWWWWWWWWWWWWWWW..T..WWWWWWWWWWWWWWWWWWWWWWWWWWWWWWWWWW...................',
     '.............WWWWWWWWWWWWWWWWWWWWWWWWWWW#####WWWWWWWWWWWWWWWWWWWWWWWWWWWWWWWWWWWWWWW#####WWWWWWWWWWWWWWWWWWWWWWWWWWWWWWWWWW...................',
-    '...S.........WWWWWWWWWWWWWWWWWWWWWWWWWWW#####WWWWWWWWWWWWWWWWWWWWWWWWWWWWWWWWWWWWWWW#####WWWWWWWWWWWWWWWWWWWWWWWWWWWWWWWWWW.....n.....G.......',
+    '...S.........WWWWWWWWWWWWWWWWWWWWWWWWWWW#####WWWWWWWWWWWWWWWWWWWWWWWPWWWWWWWWWWWWWWW#####WWWWWWWWWWWWWWWWWWWWWWWWWWWWWWWWWW.....n.....G.......',
     '#############...############....#############....############...#########....##############....##########....#################################',
     '#############.....#....#..........#....######......#....#.........#....#.......#....######.......#....#........#....#....#.###################',
     '#############.#...#....#.....#....#....######.#....#....#.....#...#....#..#....#....######..#....#....#...#....#....#....#.###################',

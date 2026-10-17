@@ -7,7 +7,7 @@ export default {
   theme: "castle",
   ambient: 0.9,
   dark: [[1,24,50,28]],
-  wind: {"gust":1.8,"calm":2.6},
+  wind: {"gust":1.4,"calm":3},
   finale: true,
   tiles: [
     '....................................................',
