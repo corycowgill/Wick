@@ -120,6 +120,82 @@ LEVELS.forEach((L, i) => {
 const avgUpd = updTotal / updFrames;
 check(avgUpd < 8, `simulation update averages ${avgUpd.toFixed(3)}ms/frame (budget 8ms incl. render; render is measured in-browser, ?debug)`);
 
+// ------------------------------------------------------------ drip rules
+section('Wax drip behaves the way a player expects');
+{
+  const T = CFG.TILE;
+  const room = (rows) => createWorld({ name: 'test', tiles: rows, entities: [] });
+  const blank = { moveX: 0, jumpHeld: false, jumpPressed: false, dripPressed: false, reabsorbPressed: false };
+  const run = (w, p, frames, inp = {}) => {
+    for (let f = 0; f < frames; f++) {
+      const i = typeof inp === 'function' ? inp(f) : inp;
+      p.update(CFG.STEP, { ...blank, ...i }, w);
+      w.update(CFG.STEP, p);
+    }
+  };
+  const fails = [];
+  Events.on('dripFail', (e) => fails.push(e.reason));
+  const at = (w, cx, feetRow, facing = 1, wax = 100) => {
+    const p = new Player();
+    p.spawn(cx, feetRow * T, wax);
+    p.facing = facing;
+    run(w, p, 2);
+    return p;
+  };
+  //        0123456789012345
+  const flat = [
+    '................',
+    '................',
+    '................',
+    '..S..........G..',
+    '################',
+  ];
+  {
+    const w = room(flat), p = at(w, 3 * T, 4);
+    const ghost = p.findDripCell(w);
+    run(w, p, 1, { dripPressed: true });
+    const b = w.blobs[0];
+    check(b && b.ty === 3 && b.tx === 4, 'standing on flat ground: drip makes a step right in front');
+    check(b && ghost && ghost.tx === b.tx && ghost.ty === b.ty, 'the ghost preview matches where the blob landed');
+  }
+  {
+    const ledge = ['................', '................', '................', '..S..........G..', '#####......#####', '................'];
+    const w = room(ledge), p = at(w, 4.5 * T, 4);
+    run(w, p, 1, { dripPressed: true });
+    const b = w.blobs[0];
+    check(b && b.ty === 4 && b.tx === 5, 'at a ledge: drip bridges the gap at floor level');
+  }
+  {
+    const wall = ['......#.........', '......#.........', '......#.........', '..S...#......G..', '################'];
+    const w = room(wall), p = at(w, 6 * T - 12, 4);
+    const before = p.feet;
+    run(w, p, 1, { dripPressed: true });
+    run(w, p, 10);
+    check(w.blobs.length === 1 && Math.abs(p.feet - (before - T)) < 1, 'against a wall: drip builds under Wick and lifts them a tile');
+  }
+  {
+    const w = room(flat), p = at(w, 7 * T, 4);
+    run(w, p, 1, { jumpPressed: true, jumpHeld: true, dripPressed: true });
+    run(w, p, 90, { jumpHeld: true });
+    check(w.blobs.length === 1 && Math.abs(p.feet - 3 * T) < 1 && p.onGround,
+      'jump and drip pressed together: the blob forms underneath and Wick lands on it');
+  }
+  {
+    fails.length = 0;
+    const w = room(flat), p = at(w, 3 * T, 4, 1, 10);
+    run(w, p, 1, { dripPressed: true });
+    check(w.blobs.length === 0 && fails[0] === 'wax', 'not enough wax: no blob and a clear "wax" failure');
+  }
+  {
+    const w = room(flat), p = at(w, 3 * T, 4);
+    run(w, p, 1, { dripPressed: true });
+    const wax = p.wax;
+    run(w, p, 1, { reabsorbPressed: true });
+    check(w.blobs.length === 0 && p.wax > wax + 3, 'soak takes the nearby blob back for half its wax');
+  }
+  Events.clear();
+}
+
 // ------------------------------------------------------------ input
 section('Input layer');
 {

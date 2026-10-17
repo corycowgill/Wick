@@ -29,8 +29,8 @@ export default {
     '##############################################################################################################################################',
   ],
   entities: [
-    {"type":"sign","x":5,"y":16,"text":"{drip} drips a wax blob. Blobs are solid for a while."},
-    {"type":"sign","x":11,"y":16,"text":"Too tall? Drip a step and hop up. Jump and drip to stack."},
+    {"type":"sign","x":5,"y":16,"text":"{drip} drips wax. The glowing outline shows where it lands."},
+    {"type":"sign","x":11,"y":16,"text":"Too tall? Drip a step, or drip against the wall to rise."},
     {"type":"sign","x":27,"y":12,"text":"At a ledge, drip to bridge the gap."},
     {"type":"sign","x":46,"y":12,"text":"Blobs melt in time. {absorb} soaks one back up."},
     {"type":"sign","x":105,"y":12,"text":"Wax spent is light lost. Build only what you need."},

@@ -88,6 +88,11 @@ export class TouchControls {
     };
     root.addEventListener('contextmenu', (e) => e.preventDefault());
   }
+  // dim a button that cannot do anything right now (e.g. DRIP without enough wax)
+  setEnabled(name, on) {
+    const el = this.root.querySelector('#tc-' + name);
+    if (el && el.classList.contains('off') === on) el.classList.toggle('off', !on);
+  }
   show(v) {
     if (v === this.visible) return;
     this.visible = v;

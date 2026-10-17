@@ -8,7 +8,7 @@ import { Camera } from './render/camera.js';
 import { Lighting } from './render/lighting.js';
 import {
   drawBackground, drawTiles, drawProps, drawEntities, drawSignPosts, drawSignText,
-  drawTileGlows, drawMist, drawForeground, themeOf,
+  drawTileGlows, drawMist, drawForeground, themeOf, drawDripGuide,
 } from './render/draw-world.js';
 import { drawWick } from './render/draw-wick.js';
 import { Particles } from './render/particles.js';
@@ -128,7 +128,12 @@ Events.on('land', (e) => {
   if (e.frac > 0.85 && e.hard > 0.2) Input.gamepad.rumble('land');
 });
 Events.on('drip', (e) => { Audio.sfx('drip'); P.splat(e.x, e.y); state.stats.drips++; });
-Events.on('dripFail', () => Audio.sfx('dripFail'));
+Events.on('dripFail', (e) => {
+  Audio.sfx('dripFail');
+  state.hudFail = 1;
+  P.smoke(e.x, e.y + 4, 3);
+  if (e.reason === 'wax') UI.toast('Not enough wax to drip', 1.4);
+});
 Events.on('reabsorb', (e) => { Audio.sfx('reabsorb'); P.absorb(e.x, e.y, e.tx, e.ty); });
 Events.on('melt', (e) => { Audio.sfx('melt'); P.splat(e.x, e.y - 4, 4); });
 Events.on('relight', (e) => {
@@ -307,6 +312,8 @@ function update(dt) {
   P.update(dt);
   state.levelCard = Math.max(0, state.levelCard - dt);
   state.flash = Math.max(0, state.flash - dt * 2.2);
+  state.hudFail = Math.max(0, (state.hudFail || 0) - dt * 2.5);
+  Input.touch.setEnabled('drip', player.canAffordDrip());
   state.fadeIn = Math.max(0, state.fadeIn - dt * 2.5);
   Audio.setFlame(player.waxFrac(), player.alive);
   Audio.setTempo(player.waxFrac());
@@ -342,6 +349,9 @@ function renderPlay(t) {
   drawSignPosts(ctx, cam, world);
   drawEntities(ctx, cam, world, t);
   P.draw(ctx, 'world');
+  if (!state.completeTimer) {
+    drawDripGuide(ctx, player, world, t, { absorbGlyph: UI.glyphs(Input.lastDevice).absorb });
+  }
   drawWick(ctx, player, t);
   drawMist(ctx, cam, world, t);
   ctx.restore();
@@ -377,7 +387,7 @@ function renderPlay(t) {
     ctx.restore();
   }
   Lighting.coldVignette(ctx, player.waxFrac(), t);
-  UI.drawHUD(ctx, player, t, { muted: Audio.muted, touch: Input.lastDevice === 'touch' });
+  UI.drawHUD(ctx, player, t, { muted: Audio.muted, touch: Input.lastDevice === 'touch', fail: state.hudFail });
   if (state.levelCard > 0) UI.drawLevelCard(ctx, world, state.levelIndex, CFG.LEVEL_CARD_TIME - state.levelCard);
   if (state.completeTimer > 0) {
     const k = Math.max(0, 1 - state.completeTimer / 0.6);

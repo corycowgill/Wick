@@ -115,8 +115,8 @@ function write(n, meta, g) {
 {
   const g = new Grid(142, 20);
   g.ground(0, 14, 17).put(3, 16, 'S');
-  g.sign(5, 16, '{drip} drips a wax blob. Blobs are solid for a while.');
-  g.sign(11, 16, 'Too tall? Drip a step and hop up. Jump and drip to stack.');
+  g.sign(5, 16, '{drip} drips wax. The glowing outline shows where it lands.');
+  g.sign(11, 16, 'Too tall? Drip a step, or drip against the wall to rise.');
   g.ground(15, 30, 13);
   // bridge gap: 6 wide; stairs in the pit lead back left
   g.ground(31, 31, 15).ground(32, 32, 16).ground(33, 36, 18);

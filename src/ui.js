@@ -38,7 +38,9 @@ export const UI = {
   drawHUD(ctx, player, time, opts = {}) {
     const frac = player.waxFrac();
     // on touch the move pad covers the bottom-left, so the candle moves to the top-left
-    const x = 40, base = opts.touch ? 92 : H - 30;
+    // a failed drip makes the candle shake
+    const shake = opts.fail ? Math.sin(time * 60) * 3 * opts.fail : 0;
+    const x = 40 + shake, base = opts.touch ? 92 : H - 30;
     const ch = lerp(5, 62, frac);
     // dish
     ctx.fillStyle = '#4a3a50';

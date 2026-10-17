@@ -31,6 +31,7 @@ export class Player {
     this.squash = 0;       // + = squashed (wide), - = stretched (tall)
     this.landTimer = 0;
     this.steamTimer = 0;
+    this.dripBuffer = 0;   // an airborne drip waits briefly until there is room under you
     this.stats = { jumps: 0, drips: 0 };
   }
 
@@ -152,7 +153,17 @@ export class Player {
     this.wax -= (moving ? CFG.DRAIN_MOVE : CFG.DRAIN_IDLE) * dt;
 
     // --- abilities ---
-    if (input.dripPressed) this.drip(world);
+    if (input.dripPressed) {
+      // in the air, keep trying for a moment (jump + drip pressed together still stacks)
+      if (!this.drip(world, !this.onGround) && !this.onGround && this.canAffordDrip()) this.dripBuffer = CFG.DRIP_BUFFER;
+    } else if (this.dripBuffer > 0) {
+      this.dripBuffer -= dt;
+      if (this.drip(world, true)) this.dripBuffer = 0;
+      else if (this.dripBuffer <= 0 || this.onGround) {
+        this.dripBuffer = 0;
+        Events.emit('dripFail', { x: this.cx, y: this.y, reason: 'space' });
+      }
+    }
     if (input.reabsorbPressed) this.reabsorb(world);
 
     // --- flammables: the flame lights anything it touches ---
@@ -179,16 +190,25 @@ export class Player {
     }
   }
 
+  canAffordDrip() { return this.wax - CFG.DRIP_COST >= CFG.DRIP_MIN_LEFT; }
+
   // Signature mechanic: drip a 1x1 wax blob. Returns true if placed.
-  drip(world) {
-    if (this.wax - CFG.DRIP_COST < CFG.DRIP_MIN_LEFT) {
-      Events.emit('dripFail', { x: this.cx, y: this.y });
+  // `quiet` suppresses the failure event (used while an airborne drip is buffered).
+  drip(world, quiet = false) {
+    if (!this.canAffordDrip()) {
+      Events.emit('dripFail', { x: this.cx, y: this.y, reason: 'wax' });
       return false;
     }
     const cell = this.findDripCell(world);
     if (!cell) {
-      Events.emit('dripFail', { x: this.cx, y: this.y });
+      if (!quiet) Events.emit('dripFail', { x: this.cx, y: this.y, reason: 'space' });
       return false;
+    }
+    if (cell.lift) {
+      // the blob forms under Wick and pushes them up a tile
+      this.y -= CFG.TILE;
+      this.vy = Math.min(this.vy, 0);
+      this.squash = -0.2;
     }
     world.addBlob(cell.tx, cell.ty, cell.fromY);
     this.wax -= CFG.DRIP_COST;
@@ -210,7 +230,8 @@ export class Player {
     if (this.onGround) {
       tries.push([front, below, false]);          // bridge over a gap
       tries.push([front, foot, false]);           // a step in front
-      tries.push([front + this.facing, foot, false]);
+      // one further only when the front cell is open (Wick overlaps it); never through a wall
+      if (world.cell(front, foot) === EMPTY) tries.push([front + this.facing, foot, false]);
     } else {
       tries.push([centerTx, below, true]);        // drip falls under you
       tries.push([front, below, true]);
@@ -218,6 +239,15 @@ export class Player {
     for (const [tx, ty, falls] of tries) {
       const c = this.resolveDrip(world, tx, ty, falls);
       if (c) return c;
+    }
+    // blocked in front (a wall)? build under yourself and rise on it
+    if (this.onGround) {
+      const ty = foot;
+      if (world.cell(centerTx, ty) === EMPTY && !(world.blockedForBlob && world.blockedForBlob(centerTx, ty)) &&
+          !rectBlocked(world, this.x, this.y - T, this.w, this.h) &&
+          !rectBlocked(world, centerTx * T, ty * T, T, T)) {
+        return { tx: centerTx, ty, fromY: ty * T, lift: true };
+      }
     }
     return null;
   }

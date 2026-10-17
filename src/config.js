@@ -63,6 +63,7 @@ export const CFG = {
   BLOB_SAG: 3,
   REABSORB_FRAC: 0.5,
   REABSORB_RANGE: 60,
+  DRIP_BUFFER: 0.3,       // seconds an airborne drip keeps trying to find room
 
   // flow
   DEATH_DELAY: 1.1,

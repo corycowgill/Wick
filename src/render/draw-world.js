@@ -982,3 +982,60 @@ function hexA(hex, a) {
   const n = parseInt(hex.slice(1), 16);
   return `rgba(${(n >> 16) & 255},${(n >> 8) & 255},${n & 255},${a})`;
 }
+
+// Drip guide: a ghost of where the next wax blob will land, and a ring on the
+// blob that "soak" would take. Makes the drip rules readable at a glance.
+export function drawDripGuide(ctx, player, world, time, opts = {}) {
+  if (!player.alive) return;
+  const cell = player.findDripCell(world);
+  const afford = player.canAffordDrip();
+  if (cell) {
+    const x = cell.tx * T, y = cell.ty * T;
+    const pulse = 0.5 + 0.5 * Math.sin(time * 5);
+    ctx.save();
+    ctx.setLineDash([5, 4]);
+    ctx.lineDashOffset = -time * 12;
+    ctx.lineWidth = 2;
+    if (afford) {
+      ctx.fillStyle = `rgba(255,236,190,${0.1 + 0.08 * pulse})`;
+      ctx.strokeStyle = `rgba(255,226,160,${0.45 + 0.3 * pulse})`;
+    } else {
+      ctx.fillStyle = 'rgba(200,80,70,0.08)';
+      ctx.strokeStyle = 'rgba(230,110,90,0.45)';
+    }
+    roundRect(ctx, x + 2, y + 2, T - 4, T - 4, 7);
+    ctx.fill(); ctx.stroke();
+    ctx.setLineDash([]);
+    // a falling drip shows its path from Wick down to where it lands
+    if (cell.fromY < y - 1) {
+      ctx.strokeStyle = afford ? 'rgba(255,226,160,0.35)' : 'rgba(230,110,90,0.3)';
+      ctx.beginPath(); ctx.moveTo(x + T / 2, cell.fromY + 4); ctx.lineTo(x + T / 2, y - 2); ctx.stroke();
+      ctx.beginPath(); ctx.moveTo(x + T / 2 - 4, y - 7); ctx.lineTo(x + T / 2, y - 2); ctx.lineTo(x + T / 2 + 4, y - 7); ctx.stroke();
+    }
+    // lifting drip: an up arrow inside the ghost
+    if (cell.lift) {
+      ctx.strokeStyle = afford ? 'rgba(255,226,160,0.8)' : 'rgba(230,110,90,0.6)';
+      ctx.beginPath(); ctx.moveTo(x + T / 2, y + T - 8); ctx.lineTo(x + T / 2, y + 8);
+      ctx.moveTo(x + T / 2 - 5, y + 13); ctx.lineTo(x + T / 2, y + 8); ctx.lineTo(x + T / 2 + 5, y + 13); ctx.stroke();
+    }
+    ctx.restore();
+  }
+  const blob = world.nearestBlob(player.cx, player.y + player.h / 2, CFG.REABSORB_RANGE);
+  if (blob) {
+    ctx.save();
+    ctx.strokeStyle = `rgba(150,230,220,${0.5 + 0.3 * Math.sin(time * 6)})`;
+    ctx.lineWidth = 2.5;
+    roundRect(ctx, blob.x - 2, blob.drawY - 2, T + 4, T + 4, 9);
+    ctx.stroke();
+    if (opts.absorbGlyph) {
+      ctx.font = '700 12px "Trebuchet MS", Verdana, sans-serif';
+      ctx.textAlign = 'center'; ctx.textBaseline = 'middle';
+      ctx.fillStyle = 'rgba(20,10,36,0.8)';
+      const w = ctx.measureText(opts.absorbGlyph).width + 10;
+      roundRect(ctx, blob.x + T / 2 - w / 2, blob.drawY - 22, w, 16, 6); ctx.fill();
+      ctx.fillStyle = '#a8f0e4';
+      ctx.fillText(opts.absorbGlyph, blob.x + T / 2, blob.drawY - 14);
+    }
+    ctx.restore();
+  }
+}
