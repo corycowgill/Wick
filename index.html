@@ -63,6 +63,13 @@
     align-items: center; justify-content: center; flex-direction: column; text-align: center; gap: 18px;
   }
   #rotate.on { display: flex; }
+  #boot {
+    position: fixed; inset: 0; z-index: 20; display: flex; align-items: center; justify-content: center;
+    text-align: center; padding: 24px; background: #140a2a; color: #fbe9c8;
+    font: 700 18px Georgia, "Times New Roman", serif;
+  }
+  #boot.hide { display: none; }
+  #boot small { display: block; margin-top: 12px; font: 400 14px Verdana, sans-serif; color: #ffb090; }
   #rotate .phone {
     width: 46px; height: 78px; border: 4px solid #ffb040; border-radius: 10px;
     animation: turn 2s ease-in-out infinite;
@@ -74,6 +81,24 @@
 <canvas id="game" width="960" height="540" aria-label="WICK game"></canvas>
 <div id="rotate"><div class="phone"></div><div>Rotate your phone<br><small style="font-weight:400;font-size:15px">Wick plays sideways.</small></div></div>
 <noscript>WICK needs JavaScript to run.</noscript>
+<div id="boot">Lighting the wick...</div>
+<script>
+  // Show load failures on screen instead of a blank page (old iOS, blocked scripts, runtime errors).
+  (function () {
+    var shown = false;
+    function show(msg) {
+      if (shown) return; shown = true;
+      var el = document.getElementById('boot');
+      el.className = 'on err';
+      el.innerHTML = 'WICK could not start on this browser.<br><small></small>';
+      el.querySelector('small').textContent = msg;
+    }
+    window.addEventListener('error', function (e) { show(e.message || 'Script error'); });
+    window.addEventListener('unhandledrejection', function (e) { show(String(e.reason)); });
+    setTimeout(function () { if (!window.WICK) show('The game scripts did not load. iOS 14 or newer is required.'); }, 8000);
+  })();
+</script>
 <script type="module" src="src/main.js"></script>
+<script nomodule>document.getElementById('boot').innerHTML = 'WICK needs a newer browser (iOS 14 or later).';</script>
 </body>
 </html>

@@ -28,7 +28,8 @@ let anyKey = false;
 
 export const Input = {
   input,
-  lastDevice: 'keyboard',       // 'keyboard' | 'gamepad' | 'touch'
+  // phones start in touch mode so the title says "Tap to begin"
+  lastDevice: typeof matchMedia === 'function' && matchMedia('(pointer: coarse)').matches ? 'touch' : 'keyboard',
   gamepad: null,
   touch: null,
   onDeviceChange: null,

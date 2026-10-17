@@ -427,4 +427,5 @@ if (params.has('level')) {
   Audio.music('title');
 }
 window.WICK = { state, LEVELS, startLevel, Lighting };
+document.getElementById('boot').classList.add('hide');
 requestAnimationFrame(frame);

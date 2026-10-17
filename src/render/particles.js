@@ -14,7 +14,7 @@ export class Particles {
   add(p) {
     if (this.list.length >= MAX) this.list.shift();
     p.life = p.max = p.life ?? 1;
-    p.vx ??= 0; p.vy ??= 0; p.g ??= 0; p.drag ??= 0; p.rot ??= 0; p.vr ??= 0; p.grow ??= 0;
+    for (const k of ['vx', 'vy', 'g', 'drag', 'rot', 'vr', 'grow']) if (p[k] === undefined) p[k] = 0;
     this.list.push(p);
     return p;
   }
