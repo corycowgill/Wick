@@ -225,8 +225,8 @@ export class Particles {
         case 'ember': case 'spark': {
           ctx.fillStyle = `rgba(${p.color},${t})`;
           ctx.beginPath(); ctx.arc(p.x, p.y, p.size * (0.5 + t * 0.5), 0, 6.283); ctx.fill();
-          ctx.fillStyle = `rgba(${p.color},${t * 0.25})`;
-          ctx.beginPath(); ctx.arc(p.x, p.y, p.size * 3, 0, 6.283); ctx.fill();
+          ctx.fillStyle = `rgba(255,130,40,${t * 0.16})`;
+          ctx.beginPath(); ctx.arc(p.x, p.y, p.size * 1.9, 0, 6.283); ctx.fill();
           break;
         }
         case 'mote': {

@@ -9,6 +9,7 @@ import { Lighting } from './render/lighting.js';
 import {
   drawBackground, drawTiles, drawProps, drawEntities, drawSignPosts, drawSignText,
   drawTileGlows, drawMist, drawForeground, themeOf, drawDripGuide, drawDecor, drawDecorGlows,
+  drawJumpShadow, drawLightDetail, drawWindStreaks,
 } from './render/draw-world.js';
 import { drawWick } from './render/draw-wick.js';
 import { Particles } from './render/particles.js';
@@ -407,6 +408,7 @@ function renderPlay(t) {
   drawProps(ctx, cam, world, t);
   drawSignPosts(ctx, cam, world);
   drawEntities(ctx, cam, world, t);
+  drawJumpShadow(ctx, world, player);
   P.draw(ctx, 'world');
   if (!state.completeTimer) {
     drawDripGuide(ctx, player, world, t, { absorbGlyph: UI.glyphs(Input.lastDevice).absorb });
@@ -420,11 +422,13 @@ function renderPlay(t) {
   ctx.save();
   ctx.translate(-cam.x, -cam.y);
   drawTileGlows(ctx);
+  drawLightDetail(ctx, cam, world, lights, t);
   drawDecorGlows(ctx, t);
   ctx.globalCompositeOperation = 'lighter';
   drawFlameTrail(ctx, player);
   P.draw(ctx, 'glow');
   ctx.globalCompositeOperation = 'source-over';
+  drawWindStreaks(ctx, cam, world, t);
   drawSignText(ctx, cam, world, player, UI.glyphs(Input.lastDevice));
   P.draw(ctx, 'fg');
   ctx.restore();

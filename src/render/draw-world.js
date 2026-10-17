@@ -273,7 +273,42 @@ function buildSprites(pal, wallKind) {
       }),
     };
   }
-  return { stone, top, plank, emitter, gate, shadeDown: shade('down'), shadeL: shade('left'), shadeR: shade('right'), hang, walls, details };
+  // interior rock: bigger, darker, cracked stones; some with roots or a glinting crystal
+  const rock = [];
+  const darker = (hex, k) => {
+    const n = parseInt(hex.slice(1), 16);
+    return `rgb(${((n >> 16) & 255) * k | 0},${((n >> 8) & 255) * k | 0},${(n & 255) * k | 0})`;
+  };
+  for (let v = 0; v < 6; v++) {
+    rock.push(make((g) => {
+      const r = rng(700 + v * 41);
+      g.fillStyle = darker(pal.mortar.length === 7 ? pal.mortar : '#3c2140', 0.8); g.fillRect(0, 0, T, T);
+      // two or three big slabs
+      const slabs = [[0, 0, 18 + r() * 8, 15 + r() * 6], [0, 0, 0, 0]];
+      slabs[1] = [slabs[0][2] + 1, 0, T, T];
+      const shapes = [[1, 1, slabs[0][2] - 1, slabs[0][3] - 1], [slabs[0][2] + 1, 1, T - 1, T * 0.6], [1, slabs[0][3] + 1, T * 0.55, T - 1], [T * 0.55 + 1, T * 0.6 + 1, T - 1, T - 1]];
+      for (const [x0, y0, x1, y1] of shapes) {
+        g.fillStyle = darker(pal.cols[(r() * pal.cols.length) | 0], 0.72);
+        g.beginPath();
+        g.moveTo(x0 + 2, y0); g.lineTo(x1 - 1, y0 + r() * 2); g.lineTo(x1, y1 - 2); g.lineTo(x0 + r() * 2, y1); g.lineTo(x0, y0 + 2);
+        g.closePath(); g.fill();
+        g.fillStyle = 'rgba(255,220,210,0.07)'; g.fillRect(x0 + 2, y0 + 1, (x1 - x0) * 0.6, 1.2);
+      }
+      g.strokeStyle = 'rgba(10,4,20,0.45)'; g.lineWidth = 0.9;
+      g.beginPath(); const cx = 6 + r() * 20; g.moveTo(cx, 4 + r() * 6); g.lineTo(cx + 3, 12 + r() * 6); g.lineTo(cx - 1, 20 + r() * 8); g.stroke();
+      if (v === 4) {          // roots
+        g.strokeStyle = '#4a2c22'; g.lineWidth = 1.6;
+        g.beginPath(); g.moveTo(0, 6); g.bezierCurveTo(10, 10, 14, 4, 22, 14); g.lineTo(T, 18); g.stroke();
+        g.lineWidth = 1; g.beginPath(); g.moveTo(14, 8); g.lineTo(12, 18); g.stroke();
+      }
+      if (v === 5) {          // a little crystal glint
+        g.fillStyle = pal.top === 'snow' ? '#a8d0ff' : '#e8b860';
+        g.beginPath(); g.moveTo(16, 10); g.lineTo(20, 16); g.lineTo(16, 22); g.lineTo(12, 16); g.closePath(); g.fill();
+        g.fillStyle = '#fff6dc'; g.fillRect(15, 13, 2, 3);
+      }
+    }));
+  }
+  return { stone, top, rock, plank, emitter, gate, shadeDown: shade('down'), shadeL: shade('left'), shadeR: shade('right'), hang, walls, details };
 }
 
 // ------------------------------------------------------------ per-world static analysis (cached)
@@ -362,6 +397,7 @@ function houseStrip(height, col, roofCol, factor, seed, windowChance) {
   const g = c.getContext('2d');
   g.translate(0, 60);
   const r = rng(seed * 977);
+  const chimneys = [];
   let x = 0;
   while (x < STRIP_W) {
     const w = 70 + r() * 110;
@@ -375,7 +411,7 @@ function houseStrip(height, col, roofCol, factor, seed, windowChance) {
     } else {
       g.fillRect(x - 4, y - 6, w + 8, 8);
     }
-    if (r() < 0.6) { g.fillStyle = col; g.fillRect(x + w * (0.2 + r() * 0.5), y - 40, 10, 34); }
+    if (r() < 0.6) { const chx = x + w * (0.2 + r() * 0.5); g.fillStyle = col; g.fillRect(chx, y - 40, 10, 34); chimneys.push({ x: chx + 5, y: y - 40 + 60, s: r() }); }
     for (let wy = y + 22; wy < height - 20; wy += 30) {
       for (let wx = x + 12; wx < x + w - 18; wx += 26) {
         if (r() < windowChance + 0.18) {
@@ -388,7 +424,7 @@ function houseStrip(height, col, roofCol, factor, seed, windowChance) {
     }
     x += w + r() * 14;
   }
-  return { canvas: c, factor, height: height + 60 };
+  return { canvas: c, factor, height: height + 60, chimneys };
 }
 
 // ------------------------------------------------------------ sky + background
@@ -442,6 +478,22 @@ export function drawBackground(ctx, cam, world, time) {
     const y = H - L.height + 100 + lift * L.factor * 0.9 + (L.factor > 0.3 ? 30 : 0);
     ctx.drawImage(L.canvas, ox, y);
     ctx.drawImage(L.canvas, ox + STRIP_W, y);
+    if (i === 1) {
+      // lazy chimney smoke curling up from the town
+      for (const ch of L.chimneys) {
+        for (const base of [ox, ox + STRIP_W]) {
+          const cx = base + ch.x, cy = y + ch.y;
+          if (cx < -60 || cx > W + 60) continue;
+          for (let k = 0; k < 4; k++) {
+            const ph = (time * 0.18 + k / 4 + ch.s) % 1;
+            ctx.fillStyle = `rgba(200,170,200,${0.14 * (1 - ph)})`;
+            ctx.beginPath();
+            ctx.arc(cx + ph * 26 + Math.sin(time + k + ch.s * 9) * 4, cy - ph * 70, 4 + ph * 12, 0, 6.283);
+            ctx.fill();
+          }
+        }
+      }
+    }
     // atmospheric perspective: far layers melt into the sky
     if (i === 0) {
       const hz = ctx.createLinearGradient(0, y + 40, 0, H);
@@ -593,6 +645,7 @@ export function drawTiles(ctx, cam, world, lights) {
   // pass 2: solid tiles, outlines, volume shading
   const edges = new Path2D();
   const deep = [new Path2D(), new Path2D(), new Path2D()];
+  const fringe = [];
   for (let ty = y0; ty <= y1; ty++) {
     for (let tx = x0; tx <= x1; tx++) {
       const k = world.cell(tx, ty);
@@ -602,8 +655,10 @@ export function drawTiles(ctx, cam, world, lights) {
       const v = ((tx * 7 + ty * 13) & 3);
       if (k === STONE) {
         const open = !stoneLike(world.cell(tx, ty - 1)) && world.cell(tx, ty - 1) !== GATE;
-        ctx.drawImage(open ? sp.top[v] : sp.stone[v], px, py, T, T);
         const d = info.depth[ty * W + tx];
+        const hv2 = hash(tx, ty);
+        ctx.drawImage(open ? sp.top[v] : d >= 2 ? sp.rock[hv2 % 13 === 0 ? 4 : hv2 % 31 === 0 ? 5 : hv2 & 3] : sp.stone[v], px, py, T, T);
+        if (open) fringe.push(px, py, hv2);
         if (d >= 2) deep[Math.min(2, d - 2)].rect(px, py, T, T);
       } else if (k === EMITTER) {
         ctx.drawImage(sp.emitter, px, py, T, T);
@@ -627,7 +682,40 @@ export function drawTiles(ctx, cam, world, lights) {
   ctx.lineWidth = 3;
   ctx.lineCap = 'round';
   ctx.stroke(edges);
+
+  // organic lip over ledge tops: leaves, moss or snow drooping past the edge
+  const fr = FRINGE[(STONES[th.stone] || STONES.plum).top];
+  ctx.fillStyle = fr[0];
+  ctx.beginPath();
+  for (let i = 0; i < fringe.length; i += 3) {
+    const px = fringe[i], py = fringe[i + 1], hv = fringe[i + 2];
+    ctx.moveTo(px - 1, py - 1.5);
+    for (let k = 0; k <= 4; k++) {
+      const x = px + k * 8;
+      const drop = 3 + ((hv >> k) % 4) * 1.4;
+      ctx.quadraticCurveTo(x + 4, py + drop + 2, x + 8, py + 2);
+    }
+    ctx.lineTo(px + T + 1, py - 1.5);
+    ctx.closePath();
+  }
+  ctx.fill();
+  ctx.fillStyle = fr[1];
+  ctx.beginPath();
+  for (let i = 0; i < fringe.length; i += 3) {
+    const px = fringe[i], py = fringe[i + 1], hv = fringe[i + 2];
+    for (let k = 0; k < 3; k++) {
+      const x = px + 4 + ((hv >> (k * 3)) % 24);
+      ctx.moveTo(x + 2.5, py - 1); ctx.ellipse(x, py - 1, 2.5, 1.4, 0, 0, 6.283);
+    }
+  }
+  ctx.fill();
 }
+
+const FRINGE = {
+  leaves: ['#a8482a', '#e89a32'],
+  moss: ['#2a6a5a', '#4a9a80'],
+  snow: ['#e8eefa', '#ffffff'],
+};
 
 // Additive glows for lit back-wall windows (after the darkness layer).
 export function drawTileGlows(ctx) {
@@ -878,6 +966,15 @@ function drawDrips(ctx, e) {
   if (e.on) {
     ctx.fillStyle = 'rgba(150,210,240,0.12)';
     ctx.fillRect(e.x + 4, e.y, T - 8, e.bottom - e.y);
+    // ripples where the water lands
+    ctx.strokeStyle = 'rgba(180,225,250,0.5)';
+    ctx.lineWidth = 1;
+    for (let k = 0; k < 2; k++) {
+      const ph = ((e.t * 2.2 + k * 0.5) % 1);
+      ctx.globalAlpha = 1 - ph;
+      ctx.beginPath(); ctx.ellipse(e.x + T / 2, e.bottom - 1, 4 + ph * 12, 1 + ph * 2.5, 0, 0, 6.283); ctx.stroke();
+    }
+    ctx.globalAlpha = 1;
   }
 }
 
@@ -963,7 +1060,9 @@ export function drawSignText(ctx, cam, world, player, glyphs) {
     const lines = wrap(ctx, parts, 250);
     const lh = 20;
     const bw = Math.max(...lines.map((l) => l.width)) + 24, bh = lines.length * lh + 14;
-    const bx = clamp(s.px - bw / 2, cam.x + 8, cam.x + cam.w - bw - 8), by = s.py - 52 - bh;
+    const bx = clamp(s.px - bw / 2, cam.x + 8, cam.x + cam.w - bw - 8);
+    // sit above both the post and Wick so the bubble never hides the flame
+    const by = Math.min(s.py - 52, near ? player.y - 34 : s.py - 52) - bh;
     ctx.globalAlpha = s.fade;
     ctx.fillStyle = 'rgba(32,16,46,0.9)';
     roundRect(ctx, bx, by, bw, bh, 8); ctx.fill();
@@ -1272,4 +1371,98 @@ export function drawTrees(ctx, cam, world) {
   const y = CFG.VIEW_H - 300 + 70 + lift * f;
   ctx.drawImage(treeStrip, ox, y);
   ctx.drawImage(treeStrip, ox + STRIP_W, y);
+}
+
+// ------------------------------------------------------------ light on the world
+// Soft shadow under Wick while airborne: shows exactly where you will land.
+export function drawJumpShadow(ctx, world, player) {
+  if (!player.alive || player.onGround) return;
+  const tx = Math.floor(player.cx / T);
+  let ty = Math.floor(player.feet / T);
+  while (ty < world.h && world.cell(tx, ty) === 0) ty++;
+  const gy = ty * T, dist = gy - player.feet;
+  if (dist > T * 7 || dist < 2) return;
+  const k = 1 - dist / (T * 7);
+  ctx.fillStyle = `rgba(14,4,26,${0.45 * k})`;
+  ctx.beginPath(); ctx.ellipse(player.cx, gy, 6 + 9 * k, 2 + 1.5 * k, 0, 0, 6.283); ctx.fill();
+}
+
+// Torchlight catching the world: warm rim light on edges facing a flame, and
+// pools of light on the floor beneath flames. Drawn additively after the darkness.
+export function drawLightDetail(ctx, cam, world, lights, time) {
+  const lit = lights.filter((l) => !l.dim && l.x > cam.x - l.r && l.x < cam.x + cam.w + l.r && l.y > cam.y - l.r && l.y < cam.y + cam.h + l.r);
+  if (!lit.length) return;
+  ctx.save();
+  ctx.globalCompositeOperation = 'lighter';
+  // pools of light on the ground
+  for (const l of lit) {
+    const tx = Math.floor(l.x / T);
+    let ty = Math.floor((l.y + 4) / T);
+    let n = 0;
+    while (ty < world.h && !world.isSolid(tx, ty) && n++ < 8) ty++;
+    if (n > 7) continue;
+    const gy = ty * T, dist = gy - l.y;
+    const w = l.r * 0.75 * (1 - Math.min(0.6, dist / (T * 10)));
+    const flick = 1 + 0.06 * Math.sin(time * 13 + l.x);
+    const g = ctx.createRadialGradient(l.x, gy, 0, l.x, gy, w * flick);
+    g.addColorStop(0, `rgba(255,170,80,${l.player ? 0.22 : 0.28})`);
+    g.addColorStop(1, 'rgba(255,120,50,0)');
+    ctx.fillStyle = g;
+    ctx.save();
+    ctx.translate(l.x, gy); ctx.scale(1, 0.16); ctx.translate(-l.x, -gy);
+    ctx.fillRect(l.x - w * 1.1, gy - w * 1.1, w * 2.2, w * 2.2);
+    ctx.restore();
+  }
+  // rim light along edges that face a flame
+  const x0 = Math.max(0, Math.floor(cam.x / T)), x1 = Math.min(world.w - 1, Math.floor((cam.x + cam.w) / T));
+  const y0 = Math.max(0, Math.floor(cam.y / T)), y1 = Math.min(world.h - 1, Math.floor((cam.y + cam.h) / T));
+  ctx.lineWidth = 2;
+  ctx.lineCap = 'round';
+  for (let ty = y0; ty <= y1; ty++) for (let tx = x0; tx <= x1; tx++) {
+    if (!world.isSolid(tx, ty)) continue;
+    const px = tx * T, py = ty * T;
+    const top = !world.isSolid(tx, ty - 1), left = !world.isSolid(tx - 1, ty), right = !world.isSolid(tx + 1, ty);
+    if (!top && !left && !right) continue;
+    for (const l of lit) {
+      const dx = px + T / 2 - l.x, dy = py + T / 2 - l.y;
+      const dd = dx * dx + dy * dy, r = l.r * 0.85;
+      if (dd > r * r) continue;
+      const a = (1 - Math.sqrt(dd) / r) ** 2 * 0.55;
+      ctx.strokeStyle = `rgba(255,180,100,${a})`;
+      ctx.beginPath();
+      if (top && l.y < py + 4) { ctx.moveTo(px + 1, py + 1); ctx.lineTo(px + T - 1, py + 1); }
+      if (left && l.x < px) { ctx.moveTo(px + 1, py + 2); ctx.lineTo(px + 1, py + T - 2); }
+      if (right && l.x > px + T) { ctx.moveTo(px + T - 1, py + 2); ctx.lineTo(px + T - 1, py + T - 2); }
+      ctx.stroke();
+    }
+  }
+  ctx.restore();
+}
+
+// Wind you can see: curved streaks blowing through a zone during a gust.
+export function drawWindStreaks(ctx, cam, world, time) {
+  ctx.save();
+  ctx.lineCap = 'round';
+  for (const z of world.windZones()) {
+    if (z.strength < 0.05) continue;
+    const r = z.rect;
+    if (r.x > cam.x + cam.w || r.x + r.w < cam.x) continue;
+    const n = 14;
+    for (let i = 0; i < n; i++) {
+      const span = r.w + 200;
+      const speed = 420 * z.strength;
+      let x = ((i * 173.3 + time * speed) % span);
+      x = z.dir > 0 ? r.x - 100 + x : r.x + r.w + 100 - x;
+      const y = r.y + ((i * 61.7) % r.h);
+      if (x < cam.x - 80 || x > cam.x + cam.w + 80) continue;
+      const len = 40 + (i % 3) * 25;
+      ctx.strokeStyle = `rgba(255,240,250,${0.22 * z.strength})`;
+      ctx.lineWidth = 1.5 + (i % 2);
+      ctx.beginPath();
+      ctx.moveTo(x, y);
+      ctx.quadraticCurveTo(x - z.dir * len * 0.5, y - 6 * Math.sin(time * 3 + i), x - z.dir * len, y + 2);
+      ctx.stroke();
+    }
+  }
+  ctx.restore();
 }
