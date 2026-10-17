@@ -1,0 +1,74 @@
+// All tuning lives here. Change numbers in one place.
+export const CFG = {
+  // display
+  VIEW_W: 960,
+  VIEW_H: 540,
+  STEP: 1 / 60,
+  MAX_DPR: 2,
+
+  // world
+  TILE: 32,
+
+  // wax
+  WAX_MAX: 100,
+  DRAIN_IDLE: 0.8,        // per second, always burning
+  DRAIN_MOVE: 1.6,        // per second while moving horizontally
+  JUMP_COST: 2,
+  DRIP_COST: 8,
+  DRIP_MIN_LEFT: 5,       // cannot drip if wax would fall below this
+  TORCH_REFILL: 40,
+  PUMPKIN_REFILL: 15,
+  RESPAWN_MIN: 70,        // respawn wax = max(wax at checkpoint, this). Tuned up from 50 so no torch soft-locks
+
+  // body
+  BODY_W: 24,
+  BODY_H_MIN: 20,
+  BODY_H_MAX: 56,
+  GROW_RATE: 90,          // px/s the body grows back after a refill
+
+  // movement
+  GRAVITY: 1800,
+  MAX_FALL: 900,
+  RUN_SPEED: 170,
+  ACCEL: 1200,
+  FRICTION: 1400,
+  AIR_CONTROL: 0.85,
+  JUMP_APEX_MIN: 0.9,     // tiles at zero wax
+  JUMP_APEX_RANGE: 2.3,   // extra tiles at full wax
+  JUMP_CUT: 0.45,         // vy multiplier when jump released early
+  COYOTE: 0.1,
+  JUMP_BUFFER: 0.1,
+
+  // light
+  LIGHT_MIN: 70,
+  LIGHT_RANGE: 230,
+  TORCH_LIGHT: 200,
+  TORCH_EMBER_LIGHT: 46,
+  PUMPKIN_LIGHT: 110,
+  PUMPKIN_IDLE_LIGHT: 46,
+  GOAL_LIGHT: 320,
+  FIRE_LIGHT: 60,
+
+  // hazards
+  WIND_PUSH: 320,         // px/s^2 ramp while a gust blows
+  WIND_MAX: 150,          // px/s top wind speed
+  WIND_WARN: 1.0,         // seconds of leaf swirl before a gust
+  WIND_FLICKER: 0.15,
+  WATER_KILL_TIME: 0.6,   // seconds exposed to a drip column
+  DRIP_ON: 1.7,           // emitter cycle (seconds raining)
+  DRIP_OFF: 1.5,          // emitter cycle (seconds dry)
+
+  // wax blobs
+  BLOB_LIFE: 14,
+  BLOB_SAG: 3,
+  REABSORB_FRAC: 0.5,
+  REABSORB_RANGE: 60,
+
+  // flow
+  DEATH_DELAY: 1.1,
+  LEVEL_CARD_TIME: 2.4,
+  GOAL_DELAY: 2.2,
+};
+
+export const lerp = (a, b, t) => a + (b - a) * t;
+export const clamp = (v, lo, hi) => (v < lo ? lo : v > hi ? hi : v);

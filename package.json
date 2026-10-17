@@ -1,0 +1,11 @@
+{
+  "name": "wick",
+  "version": "1.0.0",
+  "description": "WICK - a candle-cat platformer. AI Browser Game Jam 5, theme TORCH.",
+  "type": "module",
+  "private": true,
+  "scripts": {
+    "start": "npx serve -l 8080 .",
+    "test": "node tests/playtest.js"
+  }
+}

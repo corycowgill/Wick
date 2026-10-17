@@ -1,0 +1,79 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1, user-scalable=no, viewport-fit=cover">
+<meta name="apple-mobile-web-app-capable" content="yes">
+<meta name="mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+<meta name="apple-mobile-web-app-title" content="Wick">
+<meta name="theme-color" content="#140a2a">
+<meta name="description" content="WICK: a candle-cat platformer. Your wax is your health, your height and your light. Reach the next torch before you burn down.">
+<title>WICK</title>
+<link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 64 64'%3E%3Crect width='64' height='64' rx='14' fill='%23200f38'/%3E%3Crect x='22' y='26' width='20' height='28' rx='5' fill='%23f6e6c4' stroke='%231c0d2a' stroke-width='3'/%3E%3Cpath d='M32 6c6 8 8 12 4 18-1 2-7 2-8 0-4-6-2-10 4-18z' fill='%23ffae34'/%3E%3C/svg%3E">
+<style>
+  html, body {
+    margin: 0; padding: 0; height: 100%; height: 100dvh; width: 100%;
+    background: #0c0618; overflow: hidden;
+    touch-action: none; -webkit-user-select: none; user-select: none;
+    -webkit-touch-callout: none; overscroll-behavior: none;
+    -webkit-tap-highlight-color: transparent;
+  }
+  body { display: flex; align-items: center; justify-content: center; position: fixed; inset: 0; }
+  #game {
+    display: block; background: #140a2a;
+    touch-action: none; -webkit-user-select: none; -webkit-touch-callout: none; user-select: none;
+    outline: none;
+  }
+  noscript { color: #fbe9c8; font: 16px sans-serif; }
+
+  /* touch controls: translucent amber circles, safe-area aware */
+  #touch { position: fixed; inset: 0; pointer-events: none; display: none; z-index: 5; }
+  #touch.on { display: block; }
+  .tc {
+    position: absolute; pointer-events: auto; touch-action: none;
+    -webkit-user-select: none; user-select: none; -webkit-touch-callout: none;
+    display: flex; align-items: center; justify-content: center;
+    color: #2a1630; font: 800 15px "Trebuchet MS", Verdana, sans-serif; letter-spacing: 0.5px;
+    box-sizing: border-box;
+  }
+  .tc.round, .tc .half {
+    border-radius: 50%;
+    background: radial-gradient(circle at 40% 35%, rgba(255, 214, 140, 0.95), rgba(232, 128, 48, 0.85));
+    border: 3px solid rgba(255, 236, 190, 0.9);
+    box-shadow: 0 0 18px rgba(255, 150, 60, 0.6);
+    opacity: 0.35; transition: opacity 60ms;
+  }
+  .tc.down, .tc .half.down { opacity: 0.7; }
+  #tc-move {
+    left: calc(env(safe-area-inset-left, 0px) + 18px);
+    bottom: calc(env(safe-area-inset-bottom, 0px) + 18px);
+    width: 196px; height: 96px; gap: 4px;
+  }
+  #tc-move .half { flex: 1; height: 96px; display: flex; align-items: center; justify-content: center; font-size: 26px; border-radius: 48px; }
+  #tc-jump { width: 100px; height: 100px; right: calc(env(safe-area-inset-right, 0px) + 18px); bottom: calc(env(safe-area-inset-bottom, 0px) + 18px); font-size: 17px; }
+  #tc-drip { width: 84px; height: 84px; right: calc(env(safe-area-inset-right, 0px) + 130px); bottom: calc(env(safe-area-inset-bottom, 0px) + 26px); }
+  #tc-absorb { width: 66px; height: 66px; right: calc(env(safe-area-inset-right, 0px) + 36px); bottom: calc(env(safe-area-inset-bottom, 0px) + 132px); font-size: 12px; }
+  #tc-pause { width: 50px; height: 50px; right: calc(env(safe-area-inset-right, 0px) + 14px); top: calc(env(safe-area-inset-top, 0px) + 12px); font-size: 14px; }
+
+  #rotate {
+    position: fixed; inset: 0; z-index: 10; display: none;
+    background: #140a2a; color: #fbe9c8;
+    font: 700 20px Georgia, "Times New Roman", serif;
+    align-items: center; justify-content: center; flex-direction: column; text-align: center; gap: 18px;
+  }
+  #rotate.on { display: flex; }
+  #rotate .phone {
+    width: 46px; height: 78px; border: 4px solid #ffb040; border-radius: 10px;
+    animation: turn 2s ease-in-out infinite;
+  }
+  @keyframes turn { 0%, 30% { transform: rotate(0deg); } 60%, 100% { transform: rotate(-90deg); } }
+</style>
+</head>
+<body>
+<canvas id="game" width="960" height="540" aria-label="WICK game"></canvas>
+<div id="rotate"><div class="phone"></div><div>Rotate your phone<br><small style="font-weight:400;font-size:15px">Wick plays sideways.</small></div></div>
+<noscript>WICK needs JavaScript to run.</noscript>
+<script type="module" src="src/main.js"></script>
+</body>
+</html>
