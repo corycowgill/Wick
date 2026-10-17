@@ -88,7 +88,8 @@ export class Player {
     const ctrl = this.onGround ? 1 : CFG.AIR_CONTROL;
     if (Math.abs(mx) > 0.01) {
       const targetV = mx * CFG.RUN_SPEED;
-      const a = CFG.ACCEL * Math.max(0.35, Math.abs(mx)) * ctrl;
+      const turning = this.vx !== 0 && Math.sign(this.vx) !== Math.sign(targetV);
+      const a = CFG.ACCEL * Math.max(0.35, Math.abs(mx)) * ctrl * (turning ? CFG.TURN_BOOST : 1);
       this.vx = approach(this.vx, targetV, a * dt);
       this.facing = mx > 0 ? 1 : -1;
     } else {
@@ -126,9 +127,32 @@ export class Player {
     if (this.vy >= 0) this.jumping = false;
 
     // --- gravity + move ---
-    this.vy = Math.min(this.vy + CFG.GRAVITY * dt, CFG.MAX_FALL);
+    let g = CFG.GRAVITY;
+    if (this.vy > 0) g *= CFG.FALL_GRAVITY_MULT;
+    else if (input.jumpHeld && Math.abs(this.vy) < CFG.APEX_HANG_VEL) g *= CFG.APEX_HANG_MULT;
+    this.vy = Math.min(this.vy + g * dt, CFG.MAX_FALL);
     const fallSpeed = this.vy;
+    const riseSpeed = this.vy;
+    const dirX = Math.sign(this.vx + this.windVx);
     const res = moveAndCollide(this, (this.vx + this.windVx) * dt, this.vy * dt, world);
+    // corner correction: clipped a ceiling edge while rising? slide past it
+    if (res.ceiling && riseSpeed < -120) {
+      for (let off = 1; off <= CFG.CORNER_NUDGE; off++) {
+        const hit = [off, -off].find((o) => !rectBlocked(world, this.x + o, this.y - 2, this.w, this.h));
+        if (hit !== undefined) { this.x += hit; res.ceiling = false; break; }
+      }
+    }
+    // ledge assist: just missed the lip of a ledge? pop up onto it
+    if (res.hitX && !res.landed && !this.onGround && riseSpeed > -160 && dirX === res.hitX) {
+      for (let lift = 1; lift <= CFG.LEDGE_ASSIST; lift++) {
+        if (!rectBlocked(world, this.x + dirX * 2, this.y - lift, this.w, this.h)) {
+          this.y -= lift;
+          this.x += dirX * 2;
+          this.vy = Math.min(this.vy, 0);
+          break;
+        }
+      }
+    }
     if (res.hitX) {
       if (Math.sign(this.vx) === res.hitX) this.vx = 0;
       if (Math.sign(this.windVx) === res.hitX) this.windVx = 0;

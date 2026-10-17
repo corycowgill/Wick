@@ -1,5 +1,6 @@
-// WebAudio synthesis: sfx, a flame loop, and a generative pentatonic music loop.
-// No audio files. The context is created inside the first user gesture (iOS).
+// WebAudio: music and sfx generated with Hugging Face models (tools/gen_audio.py,
+// assets/audio/*.mp3), layered over a synth fallback that covers anything not
+// yet loaded or missing. The context is created inside the first user gesture (iOS).
 let ctx = null;
 let master, sfxBus, musicBus, noiseBuf;
 let flame = null;
@@ -9,6 +10,79 @@ let tempoFrac = 1;
 let schedTimer = null;
 let nextNote = 0, step = 0, bar = 0;
 let lastSteam = 0;
+
+// generated samples (see tools/gen_audio.py)
+const SAMPLE_FILES = [
+  'jump', 'land', 'drip', 'relight', 'pickup', 'extinguish', 'burnout', 'ignite', 'complete', 'wind',
+  'fire-loop', 'rain-loop', 'music-title', 'music-town', 'music-night', 'music-end',
+];
+const samples = {};
+let musicFilter = null;
+let musicTrack = null;          // { name, src, gain }
+let wantTrack = null;
+let fireLoop = null;            // { src, gain }
+let ambience = null;            // { name, src, gain }
+let wantAmbience = null;
+
+function loadSamples(base) {
+  for (const name of SAMPLE_FILES) {
+    fetch(`${base}${name}.mp3`)
+      .then((r) => (r.ok ? r.arrayBuffer() : Promise.reject(new Error(r.status))))
+      .then((buf) => new Promise((res, rej) => ctx.decodeAudioData(buf, res, rej)))
+      .then((audio) => {
+        samples[name] = audio;
+        if (name === wantTrack) startTrack(name);
+        if (name === wantAmbience) Audio.ambience(name.replace('-loop', ''));
+        if (name === 'fire-loop') startFireLoop();
+      })
+      .catch(() => { /* keep the synth fallback for this sound */ });
+  }
+}
+
+function loopSource(buffer, bus, level, fadeIn = 1.2) {
+  const src = ctx.createBufferSource();
+  src.buffer = buffer;
+  src.loop = true;
+  const gain = ctx.createGain();
+  gain.gain.setValueAtTime(0.0001, now());
+  gain.gain.linearRampToValueAtTime(level, now() + fadeIn);
+  src.connect(gain).connect(bus);
+  src.start();
+  return { src, gain };
+}
+
+function stopLoop(l, fade = 1.2) {
+  if (!l) return;
+  const t = now();
+  l.gain.gain.cancelScheduledValues(t);
+  l.gain.gain.setValueAtTime(l.gain.gain.value, t);
+  l.gain.gain.linearRampToValueAtTime(0.0001, t + fade);
+  l.src.stop(t + fade + 0.05);
+}
+
+function startTrack(name) {
+  if (musicTrack && musicTrack.name === name) return;
+  stopLoop(musicTrack, 1.5);
+  musicTrack = null;
+  if (!name || !samples[name]) return;
+  musicTrack = { name, ...loopSource(samples[name], musicFilter, 0.55, 1.5) };
+}
+
+function startFireLoop() {
+  if (fireLoop || !samples['fire-loop']) return;
+  fireLoop = loopSource(samples['fire-loop'], sfxBus, 0.0001, 0.1);
+  if (flame) flame.g.gain.setTargetAtTime(0, now(), 0.1);
+}
+
+function playSample(name, rate = 1, gainV = 1) {
+  const src = ctx.createBufferSource();
+  src.buffer = samples[name];
+  src.playbackRate.value = rate;
+  const g = ctx.createGain();
+  g.gain.value = gainV;
+  src.connect(g).connect(sfxBus);
+  src.start();
+}
 
 const A3 = 220;
 const PENTA = [0, 3, 5, 7, 10, 12, 15, 17, 19, 22];   // A minor pentatonic, two octaves
@@ -76,7 +150,7 @@ function buildFlame() {
 }
 
 function schedule() {
-  if (!ctx || musicState === 'off') return;
+  if (!ctx || musicState === 'off' || musicTrack) return;
   const bpm = musicState === 'title' ? 66 : musicState === 'end' ? 92 : 62 + 44 * tempoFrac;
   const stepDur = 60 / bpm / 2;                          // eighth notes
   while (nextNote < now() + 0.15) {
@@ -84,7 +158,7 @@ function schedule() {
     const root = ROOTS[bar % 4];
     const soft = musicState === 'title' ? 0.7 : 1;
     // bass on beats 1 and 3
-    if (step % 4 === 0) tone('triangle', hz(root - 12), hz(root - 12), stepDur * 3, 0.07 * soft, musicBus, t, 0.01);
+    if (step % 4 === 0) tone('triangle', hz(root - 12), hz(root - 12), stepDur * 3, 0.07 * soft, musicFilter, t, 0.01);
     // arpeggio: a gentle random walk across the pentatonic scale
     const skip = musicState === 'play' && tempoFrac < 0.3 && step % 2 === 1;
     if (!skip && (step % 8 !== 7 || Math.random() < 0.5)) {
@@ -99,7 +173,7 @@ function schedule() {
       lp.type = 'lowpass';
       lp.frequency.value = 900 + 900 * tempoFrac;
       env(g, t, 0.012, 0.03 * soft, stepDur * 1.6);
-      o.connect(lp).connect(g).connect(musicBus);
+      o.connect(lp).connect(g).connect(musicFilter);
       o.start(t);
       o.stop(t + stepDur * 2);
     }
@@ -112,6 +186,8 @@ function schedule() {
 export const Audio = {
   get ready() { return !!ctx; },
   get muted() { return muted; },
+  get loaded() { return Object.keys(samples); },
+  get track() { return musicTrack ? musicTrack.name : null; },
 
   // Call from inside a user gesture handler.
   init() {
@@ -125,6 +201,10 @@ export const Audio = {
     master.gain.value = muted ? 0 : 0.8;
     sfxBus = ctx.createGain(); sfxBus.gain.value = 0.9;
     musicBus = ctx.createGain(); musicBus.gain.value = 0.7;
+    musicFilter = ctx.createBiquadFilter();
+    musicFilter.type = 'lowpass';
+    musicFilter.frequency.value = 16000;
+    musicFilter.connect(musicBus);
     sfxBus.connect(comp); musicBus.connect(comp);
     comp.connect(master).connect(ctx.destination);
     noiseBuf = ctx.createBuffer(1, ctx.sampleRate * 2, ctx.sampleRate);
@@ -138,6 +218,8 @@ export const Audio = {
     buildFlame();
     nextNote = now();
     schedTimer = setInterval(schedule, 40);
+    loadSamples(new URL('../assets/audio/', import.meta.url).href);
+    if (wantTrack) startTrack(wantTrack);
   },
 
   resume() { if (ctx && ctx.state !== 'running') ctx.resume().catch(() => {}); },
@@ -154,15 +236,41 @@ export const Audio = {
   setFlame(frac, active = true) {
     if (!flame) return;
     const t = now();
+    if (fireLoop) {
+      fireLoop.gain.gain.setTargetAtTime(active ? 0.12 + 0.3 * frac : 0.0001, t, 0.2);
+      fireLoop.src.playbackRate.setTargetAtTime(0.8 + 0.3 * frac, t, 0.3);
+      return;
+    }
     const level = active ? 0.03 + 0.05 * frac : 0;
     flame.g.gain.setTargetAtTime(level, t, 0.15);
     flame.bp.frequency.setTargetAtTime(380 + 900 * frac, t, 0.2);
     flame.lfo.frequency.setTargetAtTime(1.5 + 3 * frac, t, 0.3);
   },
 
-  setTempo(frac) { tempoFrac = Math.max(0, Math.min(1, frac)); },
+  setTempo(frac) {
+    tempoFrac = Math.max(0, Math.min(1, frac));
+    if (!ctx || !musicFilter) return;
+    // music closes in as the flame shrinks
+    musicFilter.frequency.setTargetAtTime(musicState === 'play' ? 700 + 15000 * tempoFrac ** 1.6 : 16000, now(), 0.4);
+    if (musicTrack) musicTrack.src.playbackRate.setTargetAtTime(musicState === 'play' ? 0.94 + 0.06 * tempoFrac : 1, now(), 0.5);
+  },
 
-  music(state) {
+  // looping background ambience: 'rain' or null
+  ambience(name) {
+    const file = name ? `${name}-loop` : null;
+    wantAmbience = file;
+    if (!ctx) return;
+    if (ambience && ambience.name === file) return;
+    stopLoop(ambience, 1.5);
+    ambience = null;
+    if (file && samples[file]) ambience = { name: file, ...loopSource(samples[file], sfxBus, 0.35, 2) };
+  },
+
+  // state: 'title' | 'play' | 'end' | 'off'; track for play: 'town' | 'night'
+  music(state, track = 'town') {
+    const name = state === 'off' ? null : state === 'play' ? `music-${track}` : `music-${state}`;
+    wantTrack = name;
+    if (ctx) startTrack(name);
     if (state === musicState) return;
     musicState = state;
     if (ctx) nextNote = now() + 0.05;
@@ -173,6 +281,14 @@ export const Audio = {
     if (!ctx || muted) return;
     const t = now();
     const frac = opts.frac ?? 0.7;
+    if (samples[name]) {
+      const hard = opts.hard ?? 0.3;
+      const rate = name === 'jump' ? 0.85 + 0.35 * frac : name === 'land' ? 1.1 - 0.2 * hard : 0.96 + Math.random() * 0.08;
+      const vol = { jump: 0.45, land: 0.35 + 0.4 * hard, drip: 0.7, relight: 0.8, pickup: 0.6, extinguish: 0.8,
+        burnout: 0.7, ignite: 0.45, complete: 0.85, wind: 0.5 }[name] ?? 0.6;
+      playSample(name, rate, vol);
+      return;
+    }
     switch (name) {
       case 'jump':
         tone('triangle', 260 + 320 * frac, (260 + 320 * frac) * 1.6, 0.13, 0.16);

@@ -32,12 +32,19 @@ export const CFG = {
   RUN_SPEED: 170,
   ACCEL: 1200,
   FRICTION: 1400,
-  AIR_CONTROL: 0.85,
+  AIR_CONTROL: 0.95,
   JUMP_APEX_MIN: 0.9,     // tiles at zero wax
   JUMP_APEX_RANGE: 2.3,   // extra tiles at full wax
   JUMP_CUT: 0.45,         // vy multiplier when jump released early
   COYOTE: 0.1,
-  JUMP_BUFFER: 0.1,
+  JUMP_BUFFER: 0.12,
+  // feel
+  FALL_GRAVITY_MULT: 1.15,  // a bit heavier on the way down: snappier jumps
+  APEX_HANG_VEL: 80,        // near the top of a held jump...
+  APEX_HANG_MULT: 0.55,     // ...gravity eases off for a moment of hang time
+  TURN_BOOST: 1.8,          // extra acceleration when reversing direction
+  CORNER_NUDGE: 7,          // px: slide around ceiling corners instead of bonking
+  LEDGE_ASSIST: 10,         // px: pop up onto a ledge you just barely missed
 
   // light
   LIGHT_MIN: 70,
@@ -66,9 +73,9 @@ export const CFG = {
   DRIP_BUFFER: 0.3,       // seconds an airborne drip keeps trying to find room
 
   // flow
-  DEATH_DELAY: 1.1,
-  LEVEL_CARD_TIME: 2.4,
-  GOAL_DELAY: 2.2,
+  DEATH_DELAY: 0.85,
+  LEVEL_CARD_TIME: 2.0,
+  GOAL_DELAY: 1.7,
 };
 
 export const lerp = (a, b, t) => a + (b - a) * t;

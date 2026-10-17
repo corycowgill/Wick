@@ -1,7 +1,10 @@
-// iPhone touch controls: DOM overlay buttons driven by Pointer Events.
+// iPhone touch controls: a floating analog thumb pad for movement plus buttons,
+// all DOM overlays driven by Pointer Events.
 // Fully multi-touch; each pointer is captured by the control it pressed and
 // releasing (or cancelling) that pointer anywhere releases the control.
 const NAMES = ['left', 'right', 'jump', 'drip', 'absorb', 'pause'];
+export const STICK_RADIUS = 56;     // CSS px of thumb travel for full speed
+export const STICK_DEADZONE = 0.18;
 
 export class TouchState {
   constructor() {
@@ -9,7 +12,45 @@ export class TouchState {
     this.held = {};
     this.pressed = {};
     for (const n of NAMES) this.held[n] = false;
+    this.stick = null;            // { id, ox, oy, dx, dy } while a thumb is on the pad
+    this.moveX = 0;               // analog -1..1 from the pad
     this.onChange = null;
+  }
+  // --- thumb pad: origin where the thumb lands, knob follows it ---
+  stickDown(id, x, y) {
+    this.stick = { id, ox: x, oy: y, dx: 0, dy: 0 };
+    this.stickUpdate();
+  }
+  stickMove(id, x, y) {
+    if (!this.stick || this.stick.id !== id) return;
+    let dx = x - this.stick.ox, dy = y - this.stick.oy;
+    const d = Math.hypot(dx, dy);
+    // drag the origin along if the thumb wanders past the rim, so it never feels stuck
+    if (d > STICK_RADIUS * 1.4) {
+      const k = (d - STICK_RADIUS * 1.4) / d;
+      this.stick.ox += dx * k; this.stick.oy += dy * k;
+      dx = x - this.stick.ox; dy = y - this.stick.oy;
+    }
+    this.stick.dx = dx; this.stick.dy = dy;
+    this.stickUpdate();
+  }
+  stickUp(id) {
+    if (!this.stick || this.stick.id !== id) return;
+    this.stick = null;
+    this.stickUpdate();
+  }
+  stickUpdate() {
+    const wasL = this.held.left, wasR = this.held.right;
+    let v = 0;
+    if (this.stick) {
+      const n = Math.max(-1, Math.min(1, this.stick.dx / STICK_RADIUS));
+      const a = Math.abs(n);
+      v = a < STICK_DEADZONE ? 0 : Math.sign(n) * Math.min(1, (a - STICK_DEADZONE) / (1 - STICK_DEADZONE) * 1.15);
+    }
+    this.moveX = v;
+    this.recompute();
+    if (this.held.left && !wasL) this.pressed.left = true;
+    if (this.held.right && !wasR) this.pressed.right = true;
   }
   down(id, name) {
     this.pointers.set(id, name);
@@ -28,11 +69,15 @@ export class TouchState {
   }
   releaseAll() {
     this.pointers.clear();
+    this.stick = null;
+    this.moveX = 0;
     this.recompute();
   }
   recompute() {
     for (const n of NAMES) this.held[n] = false;
     for (const n of this.pointers.values()) this.held[n] = true;
+    if (this.moveX < -0.3) this.held.left = true;
+    if (this.moveX > 0.3) this.held.right = true;
     if (this.onChange) this.onChange(this.held);
   }
   consume() { this.pressed = {}; }
@@ -55,6 +100,21 @@ export function bindControl(el, state, pick) {
   el.addEventListener('lostpointercapture', release);
 }
 
+// Wire the floating thumb pad zone.
+export function bindStick(zone, state) {
+  zone.addEventListener('pointerdown', (e) => {
+    if (e.preventDefault) e.preventDefault();
+    if (state.stick) return;              // one thumb steers
+    try { if (zone.setPointerCapture) zone.setPointerCapture(e.pointerId); } catch { /* fast taps */ }
+    state.stickDown(e.pointerId, e.clientX, e.clientY);
+  });
+  zone.addEventListener('pointermove', (e) => state.stickMove(e.pointerId, e.clientX, e.clientY));
+  const up = (e) => state.stickUp(e.pointerId);
+  zone.addEventListener('pointerup', up);
+  zone.addEventListener('pointercancel', up);
+  zone.addEventListener('lostpointercapture', up);
+}
+
 export class TouchControls {
   constructor(doc = document, parent = document.body) {
     this.state = new TouchState();
@@ -62,7 +122,8 @@ export class TouchControls {
     const root = doc.createElement('div');
     root.id = 'touch';
     root.innerHTML = `
-      <div class="tc" id="tc-move"><span class="half" data-side="left">&#9664;</span><span class="half" data-side="right">&#9654;</span></div>
+      <div id="tc-zone"></div>
+      <div id="tc-pad"><div id="tc-ring"></div><div id="tc-knob"></div><span class="arrow l">&#9664;</span><span class="arrow r">&#9654;</span></div>
       <div class="tc round" id="tc-jump">JUMP</div>
       <div class="tc round" id="tc-drip">DRIP</div>
       <div class="tc round small" id="tc-absorb">SOAK</div>
@@ -70,12 +131,8 @@ export class TouchControls {
     parent.appendChild(root);
     this.root = root;
     const $ = (id) => root.querySelector(id);
-    const move = $('#tc-move');
-    const halves = move.querySelectorAll('.half');
-    bindControl(move, this.state, (e) => {
-      const r = move.getBoundingClientRect();
-      return e.clientX < r.left + r.width / 2 ? 'left' : 'right';
-    });
+    const zone = $('#tc-zone'), pad = $('#tc-pad'), knob = $('#tc-knob');
+    bindStick(zone, this.state);
     bindControl($('#tc-jump'), this.state, 'jump');
     bindControl($('#tc-drip'), this.state, 'drip');
     bindControl($('#tc-absorb'), this.state, 'absorb');
@@ -83,8 +140,21 @@ export class TouchControls {
     const els = { jump: $('#tc-jump'), drip: $('#tc-drip'), absorb: $('#tc-absorb'), pause: $('#tc-pause') };
     this.state.onChange = (held) => {
       for (const [k, el] of Object.entries(els)) el.classList.toggle('down', held[k]);
-      halves[0].classList.toggle('down', held.left);
-      halves[1].classList.toggle('down', held.right);
+      // the pad jumps under the thumb, the knob follows it (clamped to the rim)
+      const st = this.state.stick;
+      pad.classList.toggle('down', !!st);
+      if (st) {
+        const zr = root.getBoundingClientRect();
+        pad.style.left = `${st.ox - zr.left}px`;
+        pad.style.top = `${st.oy - zr.top}px`;
+        pad.style.bottom = 'auto';
+        const d = Math.hypot(st.dx, st.dy), max = STICK_RADIUS;
+        const k = d > max ? max / d : 1;
+        knob.style.transform = `translate(${st.dx * k}px, ${st.dy * k}px)`;
+      } else {
+        pad.style.left = pad.style.top = pad.style.bottom = '';
+        knob.style.transform = '';
+      }
     };
     root.addEventListener('contextmenu', (e) => e.preventDefault());
   }

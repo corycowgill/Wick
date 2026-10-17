@@ -1,5 +1,6 @@
 // A dripped wax blob: solid for BLOB_LIFE seconds, sags, then melts away.
 import { CFG } from '../config.js';
+import { Events } from '../events.js';
 
 export class WaxBlob {
   constructor(tx, ty, fromY) {
@@ -19,6 +20,8 @@ export class WaxBlob {
     if (this.drawY < this.y) {
       this.vy += CFG.GRAVITY * dt;
       this.drawY = Math.min(this.y, this.drawY + this.vy * dt);
+      this.falling = true;
+      if (this.drawY >= this.y) Events.emit('blobLand', { x: this.x + CFG.TILE / 2, y: this.y + CFG.TILE, blob: this });
     }
     if (this.age >= CFG.BLOB_LIFE) world.removeBlob(this, true);
   }

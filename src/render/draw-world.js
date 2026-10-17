@@ -32,21 +32,25 @@ function roundRect(ctx, x, y, w, h, r) {
 export const THEMES = {
   dusk: {
     leaves: true,
+    trees: true,
     sky: ['#2a1652', '#6e2c6c', '#d8606a', '#f39a5a'], glow: '255,200,140', haze: '#b4506e',
     stone: 'plum', bunting: true, fg: 'fence', clouds: '#c25a78',
   },
   harvest: {
     leaves: true,
+    trees: true,
     sky: ['#28123e', '#7a2a52', '#e0683a', '#f8b45a'], glow: '255,190,110', haze: '#c8603e',
     stone: 'warm', bunting: true, fg: 'pumpkins', clouds: '#d87a48',
   },
   violet: {
     leaves: true,
+    trees: true,
     sky: ['#1c1040', '#4a2470', '#a0487a', '#d8786a'], glow: '240,170,150', haze: '#7a3a72',
     stone: 'plum', stars: true, fg: 'fence', clouds: '#8a447a',
   },
   wind: {
     leaves: true,
+    trees: true,
     sky: ['#24164e', '#6a3270', '#d8707a', '#f6a878'], glow: '255,190,150', haze: '#b85a7a',
     stone: 'plum', fg: 'grass', clouds: '#d88088', streaks: true, mist: 'rgba(240,190,210,',
   },
@@ -59,6 +63,7 @@ export const THEMES = {
     stone: 'warm', backwall: 'barn', stars: true,
   },
   cold: {
+    trees: true,
     sky: ['#081028', '#142246', '#2a3a68', '#4e5280'], moon: true, haze: '#26345c',
     stone: 'slate', backwall: 'slate', snow: true, stars: true, fg: 'grass', clouds: '#26325a',
     mist: 'rgba(170,190,240,',
@@ -69,10 +74,23 @@ export const THEMES = {
   },
 };
 
+for (const [k, v] of Object.entries(THEMES)) v.name = k;
+
 export function themeOf(world) {
   const d = world.data || {};
   return THEMES[d.theme] || (d.finale ? THEMES.castle : THEMES.dusk);
 }
+
+const DECO = {
+  dusk: ['flowers', 'tuft', 'rocks', 'leaves'],
+  harvest: ['leaves', 'tuft', 'flowers', 'leaves', 'rocks'],
+  violet: ['flowers', 'tuft', 'mushrooms', 'rocks'],
+  wind: ['tuft', 'tuft', 'flowers', 'rocks'],
+  rain: ['puddle', 'mushrooms', 'rocks', 'puddle'],
+  barn: ['straw', 'straw', 'mushrooms', 'rocks'],
+  cold: ['snow', 'snow', 'icerock', 'rocks'],
+  castle: ['rubble', 'tuft', 'rubble', 'mushrooms'],
+};
 
 const STONES = {
   plum: { mortar: '#3c2140', cols: ['#83566a', '#76495f', '#8f6176', '#6d4459'], top: 'leaves' },
@@ -297,7 +315,34 @@ function analyse(world, theme) {
       if (covered[i] && (covered[i - 1] || solid(tx - 1, ty)) && (covered[i + 1] || solid(tx + 1, ty))) interior[i] = 1;
     }
   }
-  c = { depth, interior };
+  // small decorations on walkable surfaces, vines on cliff faces, lanterns under ceilings
+  const busy = new Set();
+  const mark = (x, y) => busy.add(Math.floor(y / T - 0.5) * w + Math.floor(x / T));
+  for (const e of world.entities) if (e.type === 'torch' || e.type === 'pumpkin' || e.type === 'goal') {
+    mark(e.x, e.y); mark(e.x - T, e.y); mark(e.x + T, e.y);
+  }
+  for (const s of world.signs) mark(s.px, s.py);
+  for (const p of world.props) mark(p.x, p.y);
+  const kinds = DECO[theme.name] || DECO.dusk;
+  const deco = [], vines = [], lanterns = [];
+  for (let ty = 1; ty < h - 1; ty++) for (let tx = 1; tx < w - 1; tx++) {
+    if (!solid(tx, ty) || world.grid[ty * w + tx] !== STONE) continue;
+    const hv = hash(tx, ty);
+    const openAbove = !solid(tx, ty - 1) && world.grid[(ty - 1) * w + tx] === 0;
+    if (openAbove && !busy.has((ty - 1) * w + tx) && hv % 100 < 26) {
+      deco.push({ x: tx * T, y: ty * T, kind: kinds[hv % kinds.length], v: hv });
+    }
+    // vines hang down cliff faces from the lip of a ledge
+    if (openAbove && theme.vines !== false && hv % 100 < 45) {
+      if (!solid(tx - 1, ty)) vines.push({ x: tx * T + 1, y: ty * T, len: 18 + (hv % 40), v: hv });
+      if (!solid(tx + 1, ty)) vines.push({ x: tx * T + T - 1, y: ty * T, len: 14 + ((hv >> 3) % 38), v: hv + 1 });
+    }
+    // hanging lanterns under interior ceilings
+    if (theme.backwall && !solid(tx, ty + 1) && !solid(tx, ty + 2) && !solid(tx, ty + 3) && hv % 61 === 0) {
+      lanterns.push({ x: tx * T + T / 2, y: (ty + 1) * T, len: 10 + (hv % 14), v: hv });
+    }
+  }
+  c = { depth, interior, deco, vines, lanterns };
   worldCache.set(world, c);
   return c;
 }
@@ -407,6 +452,7 @@ export function drawBackground(ctx, cam, world, time) {
       ctx.fillRect(0, y + 40, W, H - y);
     }
   });
+  drawTrees(ctx, cam, world);
   if (th.bunting && !world.data.finale) drawBunting(ctx, cam, time, lift);
   if (th.rain) drawRainStreaks(ctx, time, 0.18, 70, 1);
 }
@@ -528,7 +574,7 @@ export function drawTiles(ctx, cam, world, lights) {
       const px = tx * T, py = ty * T, i = ty * W + tx, hv = hash(tx, ty);
       if (sp.walls && info.interior[i]) {
         ctx.drawImage(sp.walls[hv % 3], px, py, T, T);
-        if (hv % 43 === 0 && th.backwall !== 'barn' && !stoneLike(world.cell(tx, ty + 1))) {
+        if (hv % (th.backwall === 'castle' ? 89 : 43) === 0 && th.backwall !== 'barn' && !stoneLike(world.cell(tx, ty + 1))) {
           ctx.drawImage(sp.details.window, px, py, T, T);
           windowGlows.push(px + T / 2, py + 17);
         } else if (hv % 37 === 1) {
@@ -990,6 +1036,9 @@ export function drawDripGuide(ctx, player, world, time, opts = {}) {
   const cell = player.findDripCell(world);
   const afford = player.canAffordDrip();
   if (cell) {
+    // full strength when standing, faint mid-jump so it never clutters platforming
+    ctx.save();
+    ctx.globalAlpha = player.onGround ? 1 : 0.4;
     const x = cell.tx * T, y = cell.ty * T;
     const pulse = 0.5 + 0.5 * Math.sin(time * 5);
     ctx.save();
@@ -1019,6 +1068,7 @@ export function drawDripGuide(ctx, player, world, time, opts = {}) {
       ctx.moveTo(x + T / 2 - 5, y + 13); ctx.lineTo(x + T / 2, y + 8); ctx.lineTo(x + T / 2 + 5, y + 13); ctx.stroke();
     }
     ctx.restore();
+    ctx.restore();
   }
   const blob = world.nearestBlob(player.cx, player.y + player.h / 2, CFG.REABSORB_RANGE);
   if (blob) {
@@ -1038,4 +1088,188 @@ export function drawDripGuide(ctx, player, world, time, opts = {}) {
     }
     ctx.restore();
   }
+}
+
+// ------------------------------------------------------------ environment detail
+// Small non-gameplay decorations on surfaces, vines down cliff faces, hanging lanterns.
+let lanternGlows = [];
+export function drawDecor(ctx, cam, world, time) {
+  const th = themeOf(world);
+  const info = analyse(world, th);
+  const inView = (x, y) => x > cam.x - 40 && x < cam.x + cam.w + 40 && y > cam.y - 60 && y < cam.y + cam.h + 60;
+  const darkAt = (x, y) => world.isDark(Math.floor(x / T), Math.floor(y / T));
+  lanternGlows = [];
+
+  // vines and roots hanging over cliff lips
+  ctx.lineCap = 'round';
+  for (const v of info.vines) {
+    if (!inView(v.x, v.y) || darkAt(v.x, v.y + 4)) continue;
+    const snow = th.stone === 'slate';
+    const sway = Math.sin(time * 1.2 + v.v) * 1.5;
+    ctx.strokeStyle = snow ? 'rgba(220,232,255,0.85)' : (v.v % 3 ? '#2f6a5a' : '#5a6a2a');
+    ctx.lineWidth = snow ? 2.2 : 1.6;
+    ctx.beginPath();
+    ctx.moveTo(v.x, v.y + 2);
+    const len = snow ? v.len * 0.4 : v.len;
+    ctx.quadraticCurveTo(v.x + sway + (v.v % 2 ? 3 : -3), v.y + len * 0.5, v.x + sway, v.y + len);
+    ctx.stroke();
+    if (!snow) {
+      ctx.fillStyle = v.v % 2 ? '#3f8a76' : '#c9732a';
+      for (let k = 1; k <= 3; k++) {
+        ctx.beginPath(); ctx.ellipse(v.x + sway * k / 3 + (k % 2 ? 2.5 : -2.5), v.y + len * k / 3.4, 2.4, 1.3, k, 0, 6.283); ctx.fill();
+      }
+    }
+  }
+
+  // surface decorations
+  for (const d of info.deco) {
+    const x = d.x, y = d.y;
+    if (!inView(x, y) || darkAt(x + T / 2, y - 4)) continue;
+    const r = d.v;
+    const ox = 4 + (r % 18);
+    switch (d.kind) {
+      case 'flowers': {
+        for (let k = 0; k < 3; k++) {
+          const fx = x + ox + k * 4, fh = 5 + ((r >> k) % 5);
+          const sw = Math.sin(time * 2 + k + r) * 0.8;
+          ctx.strokeStyle = '#4a6a2a'; ctx.lineWidth = 1;
+          ctx.beginPath(); ctx.moveTo(fx, y); ctx.lineTo(fx + sw, y - fh); ctx.stroke();
+          ctx.fillStyle = ['#f0c040', '#e8605a', '#f8e8d0', '#c870d0'][(r + k) & 3];
+          ctx.beginPath(); ctx.arc(fx + sw, y - fh, 1.8, 0, 6.283); ctx.fill();
+        }
+        break;
+      }
+      case 'tuft': {
+        ctx.strokeStyle = th.stone === 'castle' ? '#3f7a66' : '#a8963a'; ctx.lineWidth = 1.3;
+        ctx.beginPath();
+        for (let k = -2; k <= 2; k++) {
+          ctx.moveTo(x + ox + k * 2, y);
+          ctx.lineTo(x + ox + k * 3.2 + Math.sin(time * 1.8 + r), y - 5 - Math.abs(2 - Math.abs(k)) * 2);
+        }
+        ctx.stroke();
+        break;
+      }
+      case 'rocks': {
+        ctx.fillStyle = '#4a3448'; ctx.strokeStyle = OUT; ctx.lineWidth = 1.2;
+        ctx.beginPath(); ctx.ellipse(x + ox, y - 2, 4, 2.6, 0, 0, 6.283); ctx.fill(); ctx.stroke();
+        ctx.beginPath(); ctx.ellipse(x + ox + 6, y - 1.5, 2.6, 1.8, 0, 0, 6.283); ctx.fill(); ctx.stroke();
+        break;
+      }
+      case 'leaves': {
+        for (let k = 0; k < 5; k++) {
+          ctx.fillStyle = ['#e89a32', '#d4462c', '#f0c040', '#b8482a'][(r + k) & 3];
+          ctx.beginPath(); ctx.ellipse(x + ox + k * 3 - 4, y - 1.2 - (k % 2), 2.8, 1.3, (r + k) * 0.7, 0, 6.283); ctx.fill();
+        }
+        break;
+      }
+      case 'mushrooms': {
+        for (let k = 0; k < 2; k++) {
+          const mx = x + ox + k * 6, mh = 4 + k * 2;
+          ctx.fillStyle = '#e8dcc8'; ctx.fillRect(mx - 0.8, y - mh, 1.8, mh);
+          ctx.fillStyle = k ? '#3fb8a8' : '#d8583a';
+          ctx.beginPath(); ctx.ellipse(mx, y - mh, 3.6 - k, 2.2, 0, Math.PI, 0); ctx.fill();
+        }
+        break;
+      }
+      case 'puddle': {
+        ctx.fillStyle = 'rgba(30,40,80,0.7)';
+        ctx.beginPath(); ctx.ellipse(x + T / 2, y + 1.5, 12, 2.4, 0, 0, 6.283); ctx.fill();
+        ctx.fillStyle = `rgba(170,200,255,${0.25 + 0.15 * Math.sin(time * 3 + r)})`;
+        ctx.fillRect(x + T / 2 - 6, y + 0.8, 7, 1);
+        break;
+      }
+      case 'straw': {
+        ctx.strokeStyle = '#d9a640'; ctx.lineWidth = 1;
+        ctx.beginPath();
+        for (let k = 0; k < 6; k++) { const sx = x + ox + k * 2 - 4; ctx.moveTo(sx, y); ctx.lineTo(sx + ((r + k) % 5) - 2, y - 2 - (k % 3)); }
+        ctx.stroke();
+        break;
+      }
+      case 'snow': {
+        ctx.fillStyle = '#e6ecf8';
+        ctx.beginPath(); ctx.ellipse(x + ox + 2, y, 7, 3.2, 0, Math.PI, 0); ctx.fill();
+        break;
+      }
+      case 'icerock': {
+        ctx.fillStyle = 'rgba(170,200,240,0.85)';
+        ctx.beginPath(); ctx.moveTo(x + ox - 3, y); ctx.lineTo(x + ox, y - 7); ctx.lineTo(x + ox + 3, y); ctx.fill();
+        break;
+      }
+      case 'rubble': {
+        ctx.fillStyle = '#6e5464'; ctx.strokeStyle = OUT; ctx.lineWidth = 1;
+        ctx.fillRect(x + ox, y - 3, 5, 3); ctx.strokeRect(x + ox, y - 3, 5, 3);
+        ctx.fillRect(x + ox + 6, y - 2, 3, 2);
+        break;
+      }
+    }
+  }
+
+  // hanging lanterns (chain + paper lantern); their glow is added after the darkness
+  for (const l of info.lanterns) {
+    if (!inView(l.x, l.y) || darkAt(l.x, l.y + 8)) continue;
+    const sw = Math.sin(time * 1.3 + l.v) * 2;
+    const ly = l.y + l.len;
+    ctx.strokeStyle = '#2a1a2a'; ctx.lineWidth = 1.4;
+    ctx.beginPath(); ctx.moveTo(l.x, l.y); ctx.lineTo(l.x + sw, ly); ctx.stroke();
+    ctx.fillStyle = '#3a2a3a'; ctx.fillRect(l.x + sw - 4, ly, 8, 2);
+    ctx.fillStyle = '#f08a38';
+    roundRect(ctx, l.x + sw - 6, ly + 2, 12, 14, 4); ctx.fill();
+    ctx.fillStyle = '#ffd27a'; ctx.fillRect(l.x + sw - 2.5, ly + 5, 5, 8);
+    ctx.strokeStyle = OUT; ctx.lineWidth = 1.2; roundRect(ctx, l.x + sw - 6, ly + 2, 12, 14, 4); ctx.stroke();
+    lanternGlows.push(l.x + sw, ly + 9);
+  }
+}
+
+export function drawDecorGlows(ctx, time) {
+  if (!lanternGlows.length) return;
+  ctx.save();
+  ctx.globalCompositeOperation = 'lighter';
+  for (let i = 0; i < lanternGlows.length; i += 2) {
+    const x = lanternGlows[i], y = lanternGlows[i + 1];
+    const r = 44 + Math.sin(time * 7 + x) * 3;
+    const g = ctx.createRadialGradient(x, y, 2, x, y, r);
+    g.addColorStop(0, 'rgba(255,180,80,0.55)'); g.addColorStop(1, 'rgba(255,120,40,0)');
+    ctx.fillStyle = g; ctx.fillRect(x - r, y - r, r * 2, r * 2);
+  }
+  ctx.restore();
+}
+
+// mid-ground tree silhouettes (outdoor themes)
+const treeStrips = {};
+function buildTrees(frost) {
+  const c = canvas(STRIP_W, 300);
+  const g = c.getContext('2d');
+  const r = rng(4242);
+  let x = 40;
+  g.strokeStyle = '#1a0c2a';
+  g.lineCap = 'round';
+  const branch = (bx, by, ang, len, wdt, depth) => {
+    const ex = bx + Math.cos(ang) * len, ey = by + Math.sin(ang) * len;
+    g.lineWidth = wdt; g.beginPath(); g.moveTo(bx, by); g.lineTo(ex, ey); g.stroke();
+    if (depth > 0) {
+      branch(ex, ey, ang - 0.35 - r() * 0.35, len * 0.72, wdt * 0.65, depth - 1);
+      branch(ex, ey, ang + 0.35 + r() * 0.35, len * 0.7, wdt * 0.65, depth - 1);
+    } else if (r() < 0.8) {
+      g.fillStyle = frost ? 'rgba(200,215,250,0.5)' : r() < 0.6 ? 'rgba(160,60,40,0.55)' : 'rgba(200,120,40,0.45)';
+      g.beginPath(); g.arc(ex, ey, 4 + r() * 6, 0, 6.283); g.fill();
+    }
+  };
+  while (x < STRIP_W) {
+    const h = 120 + r() * 140;
+    branch(x, 300, -Math.PI / 2 + (r() - 0.5) * 0.2, h * 0.4, 9, 4);
+    x += 160 + r() * 260;
+  }
+  return c;
+}
+export function drawTrees(ctx, cam, world) {
+  const th = themeOf(world);
+  if (!th.trees) return;
+  const frost = th.stone === 'slate';
+  const treeStrip = treeStrips[frost] || (treeStrips[frost] = buildTrees(frost));
+  const lift = Math.max(0, world.pxH - CFG.VIEW_H - cam.y);
+  const f = 0.55;
+  const ox = -((cam.x * f) % STRIP_W);
+  const y = CFG.VIEW_H - 300 + 70 + lift * f;
+  ctx.drawImage(treeStrip, ox, y);
+  ctx.drawImage(treeStrip, ox + STRIP_W, y);
 }

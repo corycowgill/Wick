@@ -80,6 +80,9 @@ export const Input = {
     const right = !!(kbHeld.right || th.right || (gp && gp.right));
     let moveX = (right ? 1 : 0) - (left ? 1 : 0);
     if (gp && Math.abs(gp.moveX) > 0 && !kbHeld.left && !kbHeld.right && !th.left && !th.right) moveX = gp.moveX;
+    // the touch thumb pad is analog
+    const tx = this.touch ? this.touch.state.moveX || 0 : 0;
+    if (tx !== 0 && !kbHeld.left && !kbHeld.right) moveX = tx;
 
     input.left = left; input.right = right; input.moveX = moveX;
     input.jumpHeld = !!(kbHeld.jump || th.jump || (gp && gp.jump));

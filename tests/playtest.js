@@ -258,6 +258,22 @@ section('Input layer');
   move.dispatchEvent(ev('lostpointercapture', 1));
   check(!ts.held.left && ts.pointers.size === 0, 'lost capture releases the control');
 
+  // thumb pad: analog, deadzone, release
+  {
+    const st = new TouchState();
+    st.stickDown(7, 100, 300);
+    st.stickMove(7, 105, 300);
+    check(st.moveX === 0, 'thumb pad: a small wobble stays inside the deadzone');
+    st.stickMove(7, 100 + 56 * 0.6, 300);
+    check(st.moveX > 0.4 && st.moveX < 0.8 && st.held.right, 'thumb pad: partial push gives partial analog speed');
+    st.stickMove(7, 100 - 200, 300);
+    check(st.moveX === -1 && st.held.left, 'thumb pad: full push left gives -1');
+    st.stickMove(7, 0, 300);
+    check(st.moveX > 0, 'thumb pad: origin follows a wandering thumb, so sliding back reverses at once');
+    st.stickUp(7);
+    check(st.moveX === 0 && !st.held.left, 'thumb pad: lifting the thumb stops Wick');
+  }
+
   // unified state: all devices feed one input object
   Input.gamepad = new GamepadInput({ navigator: { getGamepads: () => [pad([0.625, 0], [0])] } });
   Input.touch = { state: new TouchState() };

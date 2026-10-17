@@ -8,12 +8,13 @@ import { Camera } from './render/camera.js';
 import { Lighting } from './render/lighting.js';
 import {
   drawBackground, drawTiles, drawProps, drawEntities, drawSignPosts, drawSignText,
-  drawTileGlows, drawMist, drawForeground, themeOf, drawDripGuide,
+  drawTileGlows, drawMist, drawForeground, themeOf, drawDripGuide, drawDecor, drawDecorGlows,
 } from './render/draw-world.js';
 import { drawWick } from './render/draw-wick.js';
 import { Particles } from './render/particles.js';
 import { Audio } from './audio.js';
 import { UI } from './ui.js';
+import { Post } from './render/post.js';
 import level1 from './levels/level1.js';
 import level2 from './levels/level2.js';
 import level3 from './levels/level3.js';
@@ -50,6 +51,10 @@ const state = {
   hitStop: 0,
   flash: 0,
   fadeIn: 0,
+  iris: 1,                 // 0 closed .. 1 open
+  trail: [],
+  fireworks: 0,
+  fireworkTimer: 0,
   time: 0,
   stats: { time: 0, deaths: 0, drips: 0 },
   tap: null,
@@ -125,6 +130,7 @@ Events.on('land', (e) => {
   Audio.sfx('land', e);
   P.dust(e.x, e.y, 6 + (e.hard * 6 | 0), 0.6 + e.hard);
   if (e.frac > 0.6) state.camera.shake(1.5 + e.hard * 4 * e.frac);
+  if (e.hard > 0.15) P.shock(e.x, e.y, e.hard);
   if (e.frac > 0.85 && e.hard > 0.2) Input.gamepad.rumble('land');
 });
 Events.on('drip', (e) => { Audio.sfx('drip'); P.splat(e.x, e.y); state.stats.drips++; });
@@ -140,16 +146,25 @@ Events.on('relight', (e) => {
   Audio.sfx('relight');
   P.sparks(e.x, e.y, 26, 220);
   P.ring(e.x, e.y, 170);
+  P.pillar(e.x, e.y + 8);
+  P.spiral(e.x, e.y);
   state.flash = 1;
   state.hitStop = 2;
   Input.gamepad.rumble('relight');
 });
-Events.on('pickup', (e) => { Audio.sfx('pickup'); P.sparks(e.x, e.y, 14, 140, '255,200,90'); P.ring(e.x, e.y, 80); });
+Events.on('pickup', (e) => {
+  Audio.sfx('pickup');
+  P.sparks(e.x, e.y, 10, 140, '255,200,90');
+  P.ring(e.x, e.y, 80);
+  P.homing(e.x, e.y, state.player, 16);
+});
+Events.on('blobLand', (e) => { P.splat(e.x, e.y - 4, 6); P.dust(e.x, e.y, 4, 0.5); });
 Events.on('ignite', (e) => { Audio.sfx('ignite'); P.sparks(e.x, e.y, 6, 90); });
 Events.on('steam', (e) => { Audio.sfx('steam'); P.steam(e.x, e.y); });
 Events.on('death', (e) => {
   Audio.sfx(e.reason === 'water' ? 'extinguish' : 'burnout');
-  if (e.reason === 'water') for (let i = 0; i < 10; i++) P.steam(e.x, e.y - 30);
+  if (e.reason === 'water') { for (let i = 0; i < 18; i++) P.steam(e.x, e.y - 30); P.ring(e.x, e.y - 30, 70, '200,220,255'); }
+  else { P.splat(e.x, e.y - 20, 14); P.sparks(e.x, e.y - 30, 8, 80, '255,120,50'); }
   P.smoke(e.x, e.y - 10, 12);
   state.camera.shake(3);
   Input.gamepad.rumble('death');
@@ -158,6 +173,10 @@ Events.on('levelComplete', (e) => {
   Audio.sfx('complete');
   P.sparks(e.x, e.y, 60, 320);
   P.ring(e.x, e.y, 320);
+  P.pillar(e.x, e.y + 20, 420);
+  P.spiral(e.x, e.y, 40);
+  state.fireworks = state.world.data.finale ? 7 : 2;
+  state.fireworkTimer = 0.3;
   state.flash = 1.6;
   state.hitStop = 4;
   state.completeTimer = CFG.GOAL_DELAY + (state.world.data.finale ? 1.5 : 0);
@@ -176,10 +195,14 @@ function startLevel(i) {
   state.levelCard = CFG.LEVEL_CARD_TIME;
   state.completeTimer = 0;
   state.paused = false;
-  state.fadeIn = 1;
+  state.iris = 0;
+  state.trail = [];
+  state.fireworks = 0;
   state.scene = 'play';
   saveProgress(i);
-  Audio.music('play');
+  Audio.music('play', i < 4 ? 'town' : 'night');
+  Audio.ambience(themeOf(state.world).rain ? 'rain' : null);
+  state.gusts = new Map();
 }
 
 function newGame(i = 0) {
@@ -193,6 +216,7 @@ function toTitle() {
   state.sel = 0;
   state.paused = false;
   Audio.music('title');
+  Audio.ambience(null);
   Audio.setFlame(0, false);
 }
 
@@ -284,6 +308,7 @@ function update(dt) {
         state.scene = 'end';
         state.endAt = state.time;
         Audio.music('end');
+        Audio.ambience(null);
         Audio.setFlame(0, false);
       }
       return;
@@ -292,21 +317,54 @@ function update(dt) {
     player.update(dt, input, world);
     world.update(dt, player);
     state.stats.time += dt;
+    if (!player.alive) state.iris = Math.min(state.iris, Math.max(0, player.deathTimer / 0.45));
     if (!player.alive && player.deathTimer <= 0) {
       state.stats.deaths++;
       respawn();
+      state.iris = 0;
     }
   }
 
   camera.update(dt, player, world);
+  for (const z of world.windZones()) {
+    const was = state.gusts.get(z);
+    if (z.state === 'gust' && was !== 'gust' && z.rect.x < camera.x + W + 200 && z.rect.x + z.rect.w > camera.x - 200) Audio.sfx('wind');
+    state.gusts.set(z, z.state);
+  }
   P.ambient(dt, camera, world, !!themeOf(world).leaves);
   if (player.alive) {
     const f = player.flamePos();
     const rate = 10 + 18 * player.waxFrac();
     if (Math.random() < rate * dt) P.ember(f.x, f.y - 6, player.waxFrac(), player.vx);
   }
+  if (player.alive && Math.random() < 5 * dt) {
+    const a = Math.random() * Math.PI * 2, d = Math.random() * player.lightRadius() * 0.6;
+    P.mote(player.cx + Math.cos(a) * d, player.y + Math.sin(a) * d * 0.7);
+  }
   for (const t of world.torches) {
+    if (t.lit && Math.random() < 2 * dt && Math.abs(t.x - player.cx) < W) {
+      P.mote(t.x + (Math.random() - 0.5) * 220, t.y - 60 + (Math.random() - 0.5) * 160);
+    }
     if (t.lit && Math.random() < 6 * dt && Math.abs(t.x - player.cx) < W) P.ember(t.x, t.y - 66, 0.6);
+  }
+  // flame trail when moving fast
+  const fp = player.flamePos();
+  state.trail.push({ x: fp.x, y: fp.y - 6 });
+  if (state.trail.length > 10) state.trail.shift();
+  if (player.alive && player.waxFrac() < 0.2 && Math.random() < 6 * dt) {
+    P.sparks(fp.x, fp.y - 8, 2, 60, '255,120,50');
+    if (Math.random() < 0.4) P.smoke(fp.x, fp.y - 10, 1);
+  }
+  for (const f of world.flammables.values()) if (f.state === 'burning' && Math.random() < 20 * dt) P.ash(f.x + 16, f.y + 16);
+  for (const b of world.blobs) if (b.drawY < b.y && Math.random() < 0.8) P.waxTrail(b.x + 16, b.drawY + 8);
+  if (state.fireworks > 0) {
+    state.fireworkTimer -= dt;
+    if (state.fireworkTimer <= 0) {
+      state.fireworks--;
+      state.fireworkTimer = 0.25 + Math.random() * 0.3;
+      P.firework(world.goal.x + (Math.random() - 0.5) * 260, world.goal.y - 160 - Math.random() * 140);
+      Audio.sfx('ignite');
+    }
   }
   if (world.goal.lit && Math.random() < 30 * dt) P.ember(world.goal.x + (Math.random() - 0.5) * 30, world.goal.y - 100, 1);
   P.update(dt);
@@ -314,7 +372,7 @@ function update(dt) {
   state.flash = Math.max(0, state.flash - dt * 2.2);
   state.hudFail = Math.max(0, (state.hudFail || 0) - dt * 2.5);
   Input.touch.setEnabled('drip', player.canAffordDrip());
-  state.fadeIn = Math.max(0, state.fadeIn - dt * 2.5);
+  if (player.alive) state.iris = Math.min(1, state.iris + dt * 1.8);
   Audio.setFlame(player.waxFrac(), player.alive);
   Audio.setTempo(player.waxFrac());
 }
@@ -345,6 +403,7 @@ function renderPlay(t) {
   ctx.save();
   ctx.translate(-cam.x, -cam.y);
   drawTiles(ctx, cam, world, lights);
+  drawDecor(ctx, cam, world, t);
   drawProps(ctx, cam, world, t);
   drawSignPosts(ctx, cam, world);
   drawEntities(ctx, cam, world, t);
@@ -361,13 +420,16 @@ function renderPlay(t) {
   ctx.save();
   ctx.translate(-cam.x, -cam.y);
   drawTileGlows(ctx);
+  drawDecorGlows(ctx, t);
   ctx.globalCompositeOperation = 'lighter';
+  drawFlameTrail(ctx, player);
   P.draw(ctx, 'glow');
   ctx.globalCompositeOperation = 'source-over';
   drawSignText(ctx, cam, world, player, UI.glyphs(Input.lastDevice));
   P.draw(ctx, 'fg');
   ctx.restore();
   drawForeground(ctx, cam, world, t);
+  Post.shafts(ctx, cam, themeOf(world).name, t);
 
   if (state.flash > 0) {
     ctx.save();
@@ -387,13 +449,14 @@ function renderPlay(t) {
     ctx.restore();
   }
   Lighting.coldVignette(ctx, player.waxFrac(), t);
+  Post.finish(ctx, themeOf(world).name, t);
   UI.drawHUD(ctx, player, t, { muted: Audio.muted, touch: Input.lastDevice === 'touch', fail: state.hudFail });
   if (state.levelCard > 0) UI.drawLevelCard(ctx, world, state.levelIndex, CFG.LEVEL_CARD_TIME - state.levelCard);
   if (state.completeTimer > 0) {
     const k = Math.max(0, 1 - state.completeTimer / 0.6);
     if (k > 0) { ctx.fillStyle = `rgba(14,6,28,${k})`; ctx.fillRect(0, 0, W, H); }
   }
-  if (state.fadeIn > 0) { ctx.fillStyle = `rgba(14,6,28,${state.fadeIn})`; ctx.fillRect(0, 0, W, H); }
+  if (state.iris < 1) Post.iris(ctx, state.iris, player.cx - cam.x, player.y + player.h / 2 - cam.y);
   if (state.paused && !state.rotateBlock) {
     const g = UI.glyphs(Input.lastDevice);
     UI.drawMenu(ctx, 'Paused', pauseItems(), state.sel, {
@@ -403,6 +466,21 @@ function renderPlay(t) {
   if (DEBUG) {
     ctx.font = '12px monospace'; ctx.fillStyle = '#fff'; ctx.textAlign = 'left'; ctx.textBaseline = 'top';
     ctx.fillText(`frame ${state.frameMs.toFixed(2)}ms  wax ${player.wax.toFixed(1)}  x ${(player.cx / 32).toFixed(1)} y ${(player.feet / 32).toFixed(1)}  dev ${Input.lastDevice}`, 90, 8);
+  }
+}
+
+// tapered additive ribbon behind the flame, stronger the faster Wick moves
+function drawFlameTrail(ctx, player) {
+  const tr = state.trail;
+  const speed = Math.hypot(player.vx + player.windVx, player.vy);
+  if (!player.alive || tr.length < 3 || speed < 90) return;
+  const k = Math.min(1, (speed - 90) / 300);
+  for (let i = 1; i < tr.length; i++) {
+    const a = i / tr.length;
+    ctx.strokeStyle = `rgba(255,${150 + a * 80 | 0},70,${a * 0.45 * k})`;
+    ctx.lineWidth = (2 + 9 * a) * (0.5 + 0.5 * player.waxFrac());
+    ctx.lineCap = 'round';
+    ctx.beginPath(); ctx.moveTo(tr[i - 1].x, tr[i - 1].y); ctx.lineTo(tr[i].x, tr[i].y); ctx.stroke();
   }
 }
 
@@ -442,6 +520,6 @@ if (params.has('level')) {
 } else {
   Audio.music('title');
 }
-window.WICK = { state, LEVELS, startLevel, Lighting };
+window.WICK = { state, LEVELS, startLevel, Lighting, Audio };
 document.getElementById('boot').classList.add('hide');
 requestAnimationFrame(frame);

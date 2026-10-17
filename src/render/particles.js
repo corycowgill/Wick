@@ -27,6 +27,66 @@ export class Particles {
       color: Math.random() < 0.5 ? '255,170,60' : '255,110,40',
     });
   }
+  // flattened ring along the ground on a hard landing
+  shock(x, y, power = 1) {
+    this.add({ kind: 'shock', layer: 'world', x, y, life: 0.35, size: 22 + 30 * power });
+  }
+  // a column of light bursting up from a torch
+  pillar(x, y, h = 260) {
+    this.add({ kind: 'pillar', layer: 'glow', x, y, life: 0.9, size: h });
+  }
+  // embers spiralling up and out
+  spiral(x, y, n = 24) {
+    for (let i = 0; i < n; i++) {
+      const a = (i / n) * Math.PI * 2;
+      this.add({
+        kind: 'ember', layer: 'glow', x: x + Math.cos(a) * 8, y, vx: Math.cos(a) * 70, vy: -120 - Math.random() * 90,
+        g: -40, drag: 1.2, life: 0.9 + Math.random() * 0.6, size: 1.6 + Math.random() * 1.8,
+        color: i % 3 ? '255,190,80' : '255,120,50', swirlA: a, swirlR: 1,
+      });
+    }
+  }
+  // sparks that fly to a target (e.g. wax flowing into Wick)
+  homing(x, y, target, n = 14, color = '255,200,100') {
+    for (let i = 0; i < n; i++) {
+      const a = Math.random() * Math.PI * 2, s = 80 + Math.random() * 120;
+      this.add({
+        kind: 'homing', layer: 'glow', x, y, vx: Math.cos(a) * s, vy: Math.sin(a) * s - 60,
+        life: 0.9 + Math.random() * 0.3, size: 1.6 + Math.random() * 1.6, color, target, delay: 0.12 + Math.random() * 0.15,
+      });
+    }
+  }
+  ash(x, y) {
+    const gray = Math.random() < 0.5;
+    this.add({
+      kind: gray ? 'ashflake' : 'ember', layer: gray ? 'world' : 'glow', x: x + (Math.random() - 0.5) * 24, y: y + (Math.random() - 0.5) * 24,
+      vx: (Math.random() - 0.5) * 30, vy: gray ? -20 - Math.random() * 20 : -50 - Math.random() * 40, g: gray ? 25 : -10, drag: 0.8,
+      life: 0.8 + Math.random() * 0.8, size: gray ? 1.6 + Math.random() * 1.6 : 1.2 + Math.random(), rot: Math.random() * 6, vr: (Math.random() - 0.5) * 8,
+      color: '255,150,60',
+    });
+  }
+  firework(x, y) {
+    const cols = ['255,200,90', '255,120,70', '255,230,160', '150,230,220'];
+    const c = cols[(Math.random() * cols.length) | 0];
+    for (let i = 0; i < 36; i++) {
+      const a = (i / 36) * Math.PI * 2, s = 140 + Math.random() * 60;
+      this.add({ kind: 'spark', layer: 'glow', x, y, vx: Math.cos(a) * s, vy: Math.sin(a) * s, g: 120, drag: 1.6, life: 0.9 + Math.random() * 0.5, size: 1.6 + Math.random(), color: c });
+    }
+    this.ring(x, y, 90, c);
+  }
+  // a glowing drop trailing behind a falling wax blob
+  waxTrail(x, y) {
+    this.add({ kind: 'ember', layer: 'glow', x: x + (Math.random() - 0.5) * 10, y, vx: 0, vy: -10, drag: 2, life: 0.35, size: 1.8, color: '255,235,190' });
+  }
+
+  // dust motes floating in the light
+  mote(x, y) {
+    this.add({
+      kind: 'mote', layer: 'glow', x, y, vx: (Math.random() - 0.5) * 8, vy: -4 - Math.random() * 6,
+      drag: 0.2, life: 3 + Math.random() * 3, size: 0.7 + Math.random() * 1.1, phase: Math.random() * 6.28,
+      color: Math.random() < 0.5 ? '255,220,170' : '255,190,120',
+    });
+  }
   sparks(x, y, n = 12, speed = 160, color = '255,190,80') {
     for (let i = 0; i < n; i++) {
       const a = Math.random() * Math.PI * 2, s = speed * (0.3 + Math.random() * 0.7);
@@ -133,6 +193,16 @@ export class Particles {
       if (p.life <= 0) continue;
       p.vy += p.g * dt;
       if (p.drag) { const d = Math.exp(-p.drag * dt); p.vx *= d; p.vy *= d; }
+      if (p.kind === 'homing') {
+        p.delay -= dt;
+        if (p.delay <= 0 && p.target) {
+          const tx = p.target.cx, ty = p.target.y + p.target.h * 0.3;
+          p.vx += (tx - p.x) * 14 * dt; p.vy += (ty - p.y) * 14 * dt;
+          p.vx *= Math.exp(-3 * dt); p.vy *= Math.exp(-3 * dt);
+          if (Math.abs(tx - p.x) < 8 && Math.abs(ty - p.y) < 10) p.life = Math.min(p.life, 0.05);
+        }
+      }
+      if (p.swirlA !== undefined) { p.swirlA += dt * 4; p.vx += Math.cos(p.swirlA) * 160 * dt; }
       if (p.kind === 'leaf') {
         p.phase += dt * 2.5;
         p.x += Math.sin(p.phase) * 25 * dt;
@@ -157,6 +227,44 @@ export class Particles {
           ctx.beginPath(); ctx.arc(p.x, p.y, p.size * (0.5 + t * 0.5), 0, 6.283); ctx.fill();
           ctx.fillStyle = `rgba(${p.color},${t * 0.25})`;
           ctx.beginPath(); ctx.arc(p.x, p.y, p.size * 3, 0, 6.283); ctx.fill();
+          break;
+        }
+        case 'mote': {
+          const tw = Math.sin(t * Math.PI) * (0.5 + 0.5 * Math.sin(p.life * 3 + p.phase));
+          ctx.fillStyle = `rgba(${p.color},${0.55 * tw})`;
+          ctx.fillRect(p.x - p.size / 2, p.y - p.size / 2, p.size, p.size);
+          break;
+        }
+        case 'shock': {
+          const k = 1 - t;
+          ctx.strokeStyle = `rgba(240,210,180,${t * 0.55})`;
+          ctx.lineWidth = 3 * t + 0.5;
+          ctx.beginPath(); ctx.ellipse(p.x, p.y, p.size * (0.3 + k), p.size * (0.3 + k) * 0.18, 0, 0, 6.283); ctx.stroke();
+          break;
+        }
+        case 'pillar': {
+          const w = 26 * (0.4 + t);
+          const g = ctx.createLinearGradient(0, p.y - p.size, 0, p.y);
+          g.addColorStop(0, 'rgba(255,190,90,0)');
+          g.addColorStop(0.7, `rgba(255,170,80,${0.35 * t})`);
+          g.addColorStop(1, `rgba(255,220,150,${0.6 * t})`);
+          ctx.fillStyle = g;
+          ctx.beginPath(); ctx.moveTo(p.x - w, p.y); ctx.lineTo(p.x - w * 0.3, p.y - p.size); ctx.lineTo(p.x + w * 0.3, p.y - p.size); ctx.lineTo(p.x + w, p.y); ctx.fill();
+          break;
+        }
+        case 'homing': {
+          ctx.fillStyle = `rgba(${p.color},${Math.min(1, t * 2)})`;
+          ctx.beginPath(); ctx.arc(p.x, p.y, p.size, 0, 6.283); ctx.fill();
+          ctx.strokeStyle = `rgba(${p.color},${t * 0.5})`;
+          ctx.lineWidth = p.size;
+          ctx.beginPath(); ctx.moveTo(p.x, p.y); ctx.lineTo(p.x - p.vx * 0.04, p.y - p.vy * 0.04); ctx.stroke();
+          break;
+        }
+        case 'ashflake': {
+          ctx.save(); ctx.translate(p.x, p.y); ctx.rotate(p.rot);
+          ctx.fillStyle = `rgba(90,80,100,${t * 0.8})`;
+          ctx.fillRect(-p.size, -p.size * 0.4, p.size * 2, p.size * 0.8);
+          ctx.restore();
           break;
         }
         case 'ring': {
