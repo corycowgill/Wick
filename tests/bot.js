@@ -84,6 +84,21 @@ const bridge = (k, d) => {
 
 const face = (d) => (p, w, f) => (f === 0 ? inp({ moveX: d * 0.01 }) : null);
 
+// Against a wall: drip k times to rise on the blobs, then jump off toward jd.
+const lift = (k, d, jd) => {
+  const rep = [face(d)];
+  for (let i = 0; i < k; i++) {
+    rep.push((p, w, f, m) => {
+      if (f === 0) return inp({ dripPressed: true });
+      if (f > 3 && p.onGround) return null;
+      return f > 40 ? null : inp();
+    });
+  }
+  rep.push(face(jd));
+  rep.push(jump(jd, 9, 0.05));
+  return seq(rep);
+};
+
 function seq(progs) {
   return (p, w, f, m) => {
     if (m.i === undefined) { m.i = 0; m.f0 = 0; m.sub = {}; }
@@ -113,6 +128,10 @@ export function programs({ drip = true } = {}) {
       list.push(['dripStep' + d, dripStep(d), 1]);
       for (const k of [1, 2, 3]) list.push([`pillar${k}:${d}`, pillar(k, d), k]);
       for (const k of [1, 2, 3]) list.push([`bridge${k}:${d}`, bridge(k, d), k]);
+      for (const k of [1, 2, 3]) {
+        list.push([`lift${k}:${d}`, lift(k, d, -d), k]);
+        list.push([`liftUp${k}:${d}`, lift(k, d, 0), k]);
+      }
     }
   }
   return list;

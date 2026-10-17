@@ -10,8 +10,7 @@ import { TouchState, bindControl } from '../src/input-touch.js';
 import { Input, input } from '../src/input.js';
 
 const QUICK = process.argv.includes('--quick');
-const LEVELS = [];
-for (let i = 1; i <= 8; i++) LEVELS.push((await import(`../src/levels/level${i}.js`)).default);
+import LEVELS from '../src/levels/index.js';
 
 let failures = 0, warnings = 0;
 const ok = (msg) => console.log(`  ok    ${msg}`);
@@ -49,10 +48,13 @@ for (let i = 0; i < LEVELS.length; i++) {
   routes.push(r);
 }
 
-section('Wax management required (no-drip bot must fail on level 3)');
+section('Wax management required (no-drip bot must fail)');
 {
-  const r = search(LEVELS[2], { drip: false });
-  check(!r.goal, 'level 3 cannot be finished without dripping wax');
+  for (const name of ['Drip Step', 'Bell Tower', 'Ember Fair']) {
+    const L = LEVELS.find((l) => l.name === name);
+    const r = search(L, { drip: false });
+    check(!r.goal, `${name} cannot be finished without dripping wax`);
+  }
 }
 
 if (!QUICK) {

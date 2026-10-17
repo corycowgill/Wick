@@ -30,6 +30,20 @@ function roundRect(ctx, x, y, w, h, r) {
 // ------------------------------------------------------------ themes
 // Each level picks a theme: sky, stone palette, back walls, weather.
 export const THEMES = {
+  canal: {
+    leaves: true, trees: true,
+    sky: ['#14183e', '#2c3a6a', '#5a6a90', '#d08a70'], glow: '255,190,140', haze: '#3a4a74',
+    stone: 'wet', fg: 'grass', clouds: '#3e4c78', water: true, mist: 'rgba(160,200,230,',
+  },
+  tower: {
+    sky: ['#0c0a26', '#22205a', '#4a3a7a', '#8a5070'], moon: true, stars: true, haze: '#2a2a5a',
+    stone: 'castle', backwall: 'brick', clouds: '#2a2a5a',
+  },
+  fair: {
+    leaves: true,
+    sky: ['#2a0e30', '#6a1c40', '#c84a3a', '#f8a050'], glow: '255,170,90', haze: '#a8403a',
+    stone: 'warm', bunting: true, fg: 'pumpkins', clouds: '#c05048',
+  },
   dusk: {
     leaves: true,
     trees: true,
@@ -82,6 +96,9 @@ export function themeOf(world) {
 }
 
 const DECO = {
+  canal: ['tuft', 'rocks', 'flowers', 'mushrooms'],
+  tower: ['rubble', 'rubble', 'tuft', 'mushrooms'],
+  fair: ['leaves', 'straw', 'flowers', 'leaves'],
   dusk: ['flowers', 'tuft', 'rocks', 'leaves'],
   harvest: ['leaves', 'tuft', 'flowers', 'leaves', 'rocks'],
   violet: ['flowers', 'tuft', 'mushrooms', 'rocks'],
@@ -734,6 +751,7 @@ export function drawTileGlows(ctx) {
 // Low mist hugging the bottom of the world (world space, before darkness).
 export function drawMist(ctx, cam, world, time) {
   const th = themeOf(world);
+  if (th.water) drawWater(ctx, cam, world, time);
   if (!th.mist) return;
   const y = world.pxH - T * 3.2;
   if (y > cam.y + cam.h) return;
@@ -835,6 +853,18 @@ export function drawProps(ctx, cam, world, time) {
         ctx.fillStyle = '#a06a3a'; ctx.fillRect(x - 13, y - 26, 26, 26); ctx.strokeRect(x - 13, y - 26, 26, 26);
         ctx.strokeStyle = '#6a3e22'; ctx.beginPath(); ctx.moveTo(x - 12, y - 25); ctx.lineTo(x + 12, y - 1);
         ctx.moveTo(x + 12, y - 25); ctx.lineTo(x - 12, y - 1); ctx.stroke();
+        break;
+      }
+      case 'lamp': {
+        const sw = Math.sin(time * 1.4 + x) * 1.5;
+        ctx.fillStyle = '#2a1a2e'; ctx.fillRect(x - 2, y - 58, 4, 58); ctx.strokeRect(x - 2, y - 58, 4, 58);
+        ctx.fillRect(x - 2, y - 58, 14, 3);
+        ctx.strokeStyle = '#2a1a2e'; ctx.lineWidth = 1.2;
+        ctx.beginPath(); ctx.moveTo(x + 10, y - 55); ctx.lineTo(x + 10 + sw, y - 48); ctx.stroke();
+        ctx.fillStyle = '#f08a38'; roundRect(ctx, x + 4 + sw, y - 48, 12, 15, 4); ctx.fill();
+        ctx.fillStyle = '#ffd27a'; ctx.fillRect(x + 7.5 + sw, y - 45, 5, 9);
+        ctx.strokeStyle = OUT; roundRect(ctx, x + 4 + sw, y - 48, 12, 15, 4); ctx.stroke();
+        lanternGlows.push(x + 10 + sw, y - 40);
         break;
       }
       case 'banner': {
@@ -1465,4 +1495,32 @@ export function drawWindStreaks(ctx, cam, world, time) {
     }
   }
   ctx.restore();
+}
+
+// Canal water: a rippling surface in every pit that reaches the bottom of the world.
+function drawWater(ctx, cam, world, time) {
+  const y = world.pxH - T - 10;
+  if (y > cam.y + cam.h) return;
+  const x0 = Math.max(0, Math.floor(cam.x / T)), x1 = Math.min(world.w - 1, Math.floor((cam.x + cam.w) / T));
+  for (let tx = x0; tx <= x1; tx++) {
+    if (world.cell(tx, world.h - 2) !== 0) continue;
+    const px = tx * T;
+    const g = ctx.createLinearGradient(0, y, 0, y + 22);
+    g.addColorStop(0, 'rgba(70,120,170,0.75)'); g.addColorStop(1, 'rgba(20,40,80,0.9)');
+    ctx.fillStyle = g;
+    ctx.fillRect(px, y, T, 22);
+    ctx.strokeStyle = 'rgba(190,225,255,0.55)';
+    ctx.lineWidth = 1.2;
+    ctx.beginPath();
+    for (let k = 0; k <= 8; k++) {
+      const wx = px + k * 4, wy = y + Math.sin(time * 2.5 + wx * 0.15) * 1.5;
+      if (k === 0) ctx.moveTo(wx, wy); else ctx.lineTo(wx, wy);
+    }
+    ctx.stroke();
+    // a lantern's warm reflection, broken by ripples
+    if ((tx * 7) % 5 === 0) {
+      ctx.fillStyle = `rgba(255,180,90,${0.25 + 0.15 * Math.sin(time * 3 + tx)})`;
+      ctx.fillRect(px + 8 + Math.sin(time * 2 + tx) * 3, y + 6, 10, 2);
+    }
+  }
 }

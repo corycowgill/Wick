@@ -16,17 +16,10 @@ import { Particles } from './render/particles.js';
 import { Audio } from './audio.js';
 import { UI } from './ui.js';
 import { Post } from './render/post.js';
-import level1 from './levels/level1.js';
-import level2 from './levels/level2.js';
-import level3 from './levels/level3.js';
-import level4 from './levels/level4.js';
-import level5 from './levels/level5.js';
-import level6 from './levels/level6.js';
-import level7 from './levels/level7.js';
-import level8 from './levels/level8.js';
+import LEVEL_LIST from './levels/index.js';
 
 export { Events };
-export const LEVELS = [level1, level2, level3, level4, level5, level6, level7, level8];
+export const LEVELS = LEVEL_LIST;
 
 const W = CFG.VIEW_W, H = CFG.VIEW_H;
 const params = new URLSearchParams(location.search);
@@ -201,7 +194,7 @@ function startLevel(i) {
   state.fireworks = 0;
   state.scene = 'play';
   saveProgress(i);
-  Audio.music('play', i < 4 ? 'town' : 'night');
+  Audio.music('play', i < 5 ? 'town' : 'night');
   Audio.ambience(themeOf(state.world).rain ? 'rain' : null);
   state.gusts = new Map();
 }
