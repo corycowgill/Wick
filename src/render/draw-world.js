@@ -3,6 +3,7 @@
 import { CFG, clamp, lerp } from '../config.js';
 import { STONE, ONEWAY, BLOB, COBWEB, GATE, EMITTER } from '../physics.js';
 import { drawFlame } from './draw-wick.js';
+import { drawThemeSky, drawThemeBackdrop } from './theme-fx.js';
 
 const T = CFG.TILE;
 const OUT = '#1c0d2a';
@@ -281,6 +282,18 @@ function buildSprites(pal, wallKind) {
         g.fillStyle = '#6e4430'; g.fillRect(0, 12, T, 2);
         g.fillStyle = '#2a1820'; g.fillRect(4, 14, 2, 2); g.fillRect(26, 14, 2, 2);
       }),
+      stained: make((g) => {
+        g.fillStyle = '#140a1c'; roundRectTop(g, 7, 4, 18, 25, 9); g.fill();
+        const panes = ['#c8303a', '#3a6ad8', '#e8b030', '#2aa890', '#a040c0', '#e86a30'];
+        for (let i = 0; i < 6; i++) {
+          g.fillStyle = panes[i];
+          g.fillRect(9 + (i % 2) * 7, 8 + Math.floor(i / 2) * 6.5, 6.5, 6);
+        }
+        g.fillStyle = '#e8b030'; g.beginPath(); g.arc(16, 9, 4, Math.PI, 0); g.fill();
+        g.strokeStyle = '#140a1c'; g.lineWidth = 1.2;
+        g.beginPath(); g.moveTo(16, 6); g.lineTo(16, 28); g.moveTo(9, 14.5); g.lineTo(23, 14.5); g.moveTo(9, 21); g.lineTo(23, 21); g.stroke();
+        g.fillStyle = '#5a3424'; g.fillRect(6, 28, 20, 3);
+      }),
       banner: make((g) => {
         g.fillStyle = '#4a2c2a'; g.fillRect(4, 2, 24, 3);
         g.fillStyle = '#8a2430';
@@ -486,6 +499,7 @@ export function drawBackground(ctx, cam, world, time) {
     ctx.fillRect(0, 0, W, H);
   }
   if (th.clouds) drawClouds(ctx, cam, th, time, lift);
+  drawThemeSky(ctx, cam, world, time, th, lift);
 
   const baseY = H * 0.86 + lift * 0.08;
   drawCastle(ctx, W * 0.72 - (cam.x * 0.04) % 400, baseY, time, world);
@@ -521,6 +535,7 @@ export function drawBackground(ctx, cam, world, time) {
       ctx.fillRect(0, y + 40, W, H - y);
     }
   });
+  drawThemeBackdrop(ctx, cam, world, time, th, lift);
   drawTrees(ctx, cam, world);
   if (th.bunting && !world.data.finale) drawBunting(ctx, cam, time, lift);
   if (th.rain) drawRainStreaks(ctx, time, 0.18, 70, 1);
@@ -644,7 +659,7 @@ export function drawTiles(ctx, cam, world, lights) {
       if (sp.walls && info.interior[i]) {
         ctx.drawImage(sp.walls[hv % 3], px, py, T, T);
         if (hv % (th.backwall === 'castle' ? 89 : 43) === 0 && th.backwall !== 'barn' && !stoneLike(world.cell(tx, ty + 1))) {
-          ctx.drawImage(sp.details.window, px, py, T, T);
+          ctx.drawImage(th.backwall === 'castle' ? sp.details.stained : sp.details.window, px, py, T, T);
           windowGlows.push(px + T / 2, py + 17);
         } else if (hv % 37 === 1) {
           ctx.drawImage(th.backwall === 'castle' ? sp.details.banner : sp.details.beam, px, py, T, T);

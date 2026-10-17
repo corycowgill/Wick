@@ -79,6 +79,32 @@ export class Particles {
     this.add({ kind: 'ember', layer: 'glow', x: x + (Math.random() - 0.5) * 10, y, vx: 0, vy: -10, drag: 2, life: 0.35, size: 1.8, color: '255,235,190' });
   }
 
+  // fireflies: drifting, blinking points of light
+  firefly(x, y) {
+    this.add({
+      kind: 'firefly', layer: 'glow', x, y, vx: (Math.random() - 0.5) * 20, vy: (Math.random() - 0.5) * 12,
+      life: 4 + Math.random() * 3, size: 1.6, phase: Math.random() * 6.28, color: '200,255,140',
+    });
+  }
+  // loose straw drifting down in the barn
+  straw(x, y) {
+    this.add({
+      kind: 'straw', layer: 'world', x, y, vx: (Math.random() - 0.5) * 20, vy: 20 + Math.random() * 20, drag: 0.3,
+      life: 5 + Math.random() * 3, size: 4 + Math.random() * 4, rot: Math.random() * 6, vr: (Math.random() - 0.5) * 3,
+      phase: Math.random() * 6.28,
+    });
+  }
+  // Wick's breath fogging in the cold
+  breath(x, y, dir) {
+    for (let i = 0; i < 3; i++) {
+      this.add({
+        kind: 'steam', layer: 'world', x: x + i * dir * 3, y: y + (Math.random() - 0.5) * 3,
+        vx: dir * (18 + Math.random() * 14), vy: -8 - Math.random() * 6, drag: 1.2, life: 0.9 + Math.random() * 0.4,
+        size: 2 + Math.random() * 1.5, grow: 9,
+      });
+    }
+  }
+
   // dust motes floating in the light
   mote(x, y) {
     this.add({
@@ -203,6 +229,11 @@ export class Particles {
         }
       }
       if (p.swirlA !== undefined) { p.swirlA += dt * 4; p.vx += Math.cos(p.swirlA) * 160 * dt; }
+      if (p.kind === 'firefly' || p.kind === 'straw') {
+        p.phase += dt * 1.7;
+        p.vx += Math.cos(p.phase) * (p.kind === 'firefly' ? 30 : 12) * dt;
+        if (p.kind === 'firefly') p.vy += Math.sin(p.phase * 1.3) * 20 * dt;
+      }
       if (p.kind === 'leaf') {
         p.phase += dt * 2.5;
         p.x += Math.sin(p.phase) * 25 * dt;
@@ -227,6 +258,23 @@ export class Particles {
           ctx.beginPath(); ctx.arc(p.x, p.y, p.size * (0.5 + t * 0.5), 0, 6.283); ctx.fill();
           ctx.fillStyle = `rgba(255,130,40,${t * 0.16})`;
           ctx.beginPath(); ctx.arc(p.x, p.y, p.size * 1.9, 0, 6.283); ctx.fill();
+          break;
+        }
+        case 'firefly': {
+          const blink = Math.max(0, Math.sin(p.life * 2.6 + p.phase));
+          const a = Math.min(1, t * 3) * blink;
+          ctx.fillStyle = `rgba(${p.color},${a})`;
+          ctx.beginPath(); ctx.arc(p.x, p.y, p.size, 0, 6.283); ctx.fill();
+          ctx.fillStyle = `rgba(${p.color},${a * 0.18})`;
+          ctx.beginPath(); ctx.arc(p.x, p.y, p.size * 5, 0, 6.283); ctx.fill();
+          break;
+        }
+        case 'straw': {
+          ctx.save(); ctx.translate(p.x, p.y); ctx.rotate(p.rot);
+          ctx.globalAlpha = Math.min(1, t * 3);
+          ctx.fillStyle = '#d9a640';
+          ctx.fillRect(-p.size / 2, -0.6, p.size, 1.3);
+          ctx.restore();
           break;
         }
         case 'mote': {

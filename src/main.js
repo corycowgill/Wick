@@ -16,6 +16,7 @@ import { Particles } from './render/particles.js';
 import { Audio } from './audio.js';
 import { UI } from './ui.js';
 import { Post } from './render/post.js';
+import { drawThemeWorld, updateThemeFx, drawThemeOverlay } from './render/theme-fx.js';
 import LEVEL_LIST from './levels/index.js';
 
 export { Events };
@@ -379,6 +380,7 @@ function update(dt) {
     state.gusts.set(z, z.state);
   }
   P.ambient(dt, camera, world, !!themeOf(world).leaves);
+  updateThemeFx(dt, P, camera, world, player, themeOf(world), (n) => Audio.sfx(n));
   if (player.alive) {
     const f = player.flamePos();
     const rate = 10 + 18 * player.waxFrac();
@@ -453,6 +455,7 @@ function renderPlay(t) {
   ctx.translate(-cam.x, -cam.y);
   drawTiles(ctx, cam, world, lights);
   drawDecor(ctx, cam, world, t);
+  drawThemeWorld(ctx, cam, world, t, themeOf(world));
   drawProps(ctx, cam, world, t);
   drawSignPosts(ctx, cam, world);
   drawEntities(ctx, cam, world, t);
@@ -480,6 +483,7 @@ function renderPlay(t) {
   drawSignText(ctx, cam, world, player, UI.glyphs(Input.lastDevice));
   P.draw(ctx, 'fg');
   ctx.restore();
+  drawThemeOverlay(ctx, world, t, themeOf(world));
   drawForeground(ctx, cam, world, t);
   Post.shafts(ctx, cam, themeOf(world).name, t);
 

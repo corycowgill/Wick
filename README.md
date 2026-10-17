@@ -76,6 +76,7 @@ The whole project came from this sequence of requests, lightly cleaned up for ty
 10. *"Improve the level design and add more levels."* Three new levels, and the wax budgets retuned.
 11. *"Play through all the levels and test the gameplay and puzzles."* This led to the hazard-aware playthrough below. It found that some of the wax cuts from step 10 were too harsh once real wind and rain were in play (The Windy Bridge, Cold Quarter, Castle Stair), and those were eased. All 11 levels are now completed by recorded routes replayed in the real game, with live wind, rain and fire.
 12. *"Describe how we are building this game in the readme"* (this section), and *"Add the Hallucinated Games intro to the loading."*
+13. *"Improve the graphics details in each level: add nuance and atmosphere to each level and its theme."* Each level got a signature set piece: market stalls, a cornfield with scarecrows, giant candles, canal bridges with floating lanterns, windmills, lightning and thunder, swinging bells, drifting straw, a Ferris wheel with fireworks, an aurora with frosty breath, and stained glass with embers.
 
 ### Technology
 

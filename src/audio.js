@@ -338,6 +338,13 @@ export const Audio = {
         [0, 3, 7, 12, 15, 19].forEach((s, i) => tone('triangle', hz(s + 12), hz(s + 12), 0.9, 0.08, sfxBus, t + i * 0.09, 0.01));
         noise(0.9, 0.12, 'bandpass', 200, 2400, 0.8);
         break;
+      case 'thunder':
+        noise(2.6, 0.32, 'lowpass', 420, 60, 0.7);
+        noise(1.2, 0.18, 'lowpass', 900, 120, 0.5, t + 0.15);
+        break;
+      case 'bell':
+        [196, 392, 588, 784].forEach((f, i) => tone('sine', f * 1.003, f, 3.2 - i * 0.5, 0.06 / (i + 1), sfxBus, t, 0.004));
+        break;
       case 'menu':
         tone('triangle', 520, 520, 0.06, 0.07);
         break;
