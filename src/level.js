@@ -97,7 +97,7 @@ export function createWorld(data) {
   for (const e of emitters) {
     if (!last || last.ty !== e.ty || last.tx !== e.tx - 1) group++;
     const offsets = dripOpts.phases || [];
-    e.t = offsets[group] ?? (group * 1.15) % e.period;
+    e.phase0 = e.t = offsets[group] ?? (group * 1.15) % e.period;
     e.group = group;
     last = e;
   }
@@ -251,7 +251,7 @@ export function createWorld(data) {
         checkpoint: { ...this.checkpoint },
         complete: this.complete,
         time: this.time,
-        ent: entities.filter((e) => e.type === 'wind' || e.type === 'drip').map((e) => [e, e.t]),
+        ent: entities.filter((e) => e.type === 'wind' || e.type === 'drip').map((e) => [e, e.frames]),
       };
     },
     restore(s) {
@@ -264,7 +264,7 @@ export function createWorld(data) {
       this.checkpoint = { ...s.checkpoint };
       this.complete = s.complete;
       this.time = s.time;
-      for (const [e, t] of s.ent) e.t = t;
+      for (const [e, f] of s.ent) { e.frames = f; e.t = (e.phase0 + f * CFG.STEP) % e.period; }
     },
   };
   return world;

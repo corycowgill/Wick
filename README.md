@@ -74,7 +74,7 @@ The whole project came from this sequence of requests, lightly cleaned up for ty
 8. *"More graphics improvements for the aesthetic. iPhone controls: make it a thumb pad for the movement."*
 9. *"Improve the VFX"*, *"Make the gameplay more fluid"* and *"Improve the VFX and details in the levels."* Flame trails, light pillars, shockwaves, apex hang, corner correction, ledge assist, rim light, light pools, jump shadows, visible wind.
 10. *"Improve the level design and add more levels."* Three new levels, and the wax budgets retuned.
-11. *"Play through all the levels and test the gameplay and puzzles."* This led to the hazard-aware playthrough below. It found that some of the wax cuts from step 10 were too harsh once real wind and rain were in play (The Windy Bridge, Cold Quarter, Castle Stair), and those were eased.
+11. *"Play through all the levels and test the gameplay and puzzles."* This led to the hazard-aware playthrough below. It found that some of the wax cuts from step 10 were too harsh once real wind and rain were in play (The Windy Bridge, Cold Quarter, Castle Stair), and those were eased. All 11 levels are now completed by recorded routes replayed in the real game, with live wind, rain and fire.
 12. *"Describe how we are building this game in the readme"* (this section), and *"Add the Hallucinated Games intro to the loading."*
 
 ### Technology

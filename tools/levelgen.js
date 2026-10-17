@@ -270,18 +270,19 @@ function write(n, meta, g) {
   g.ground(101, 109, 18);
   g.put(110, 20, '#');                                  // pit escape step
   g.ground(115, 122, 18).put(118, 17, 'P');
-  g.ground(127, 135, 18);
+  g.ground(127, 135, 18).put(132, 17, 'T');
   g.put(123, 20, '#');
   // rain + wind run
   g.ground(136, 162, 18);
   g.rect(136, 0, 160, 9);
   g.rect(140, 9, 142, 9, '~').rect(150, 9, 153, 9, '~');
   g.fill(136, 10, 160, 17, 'W');
-  g.ground(163, 177, 15).put(172, 14, 'G');
+  g.put(146, 17, 'P');
+  g.ground(163, 177, 16).put(172, 15, 'G');
   g.sign(160, 17, 'One last climb. Build it.');
   define('cold', {
     name: 'Cold Quarter', hint: 'Every drop of wax counts.',
-    extra: { theme: 'cold', ambient: 0.93, dark: [[51, 76], [101, 135]], wind: { dir: -1, gust: 1.8, calm: 2.8 } },
+    extra: { theme: 'cold', ambient: 0.93, dark: [[51, 76], [101, 135]], wind: { dir: -1, gust: 1.4, calm: 3.0 } },
   }, g);
 }
 
@@ -300,10 +301,12 @@ function write(n, meta, g) {
   // tier 1 (row 41, walk west): torch, wind pushes east, gaps in the floor
   g.put(38, 40, 'T');
   g.clear(28, 41, 30, 41).clear(16, 41, 18, 41);
-  g.fill(10, 36, 42, 40, 'W');
+  g.fill(20, 36, 36, 40, 'W');
+  g.put(24, 40, 'P');
   // tier 2 (row 35, walk east): rain from tier 3's underside
   g.put(12, 34, 'T');
   g.rect(18, 29, 20, 29, '~').rect(28, 29, 31, 29, '~').plat(29, 30, 33).rect(38, 29, 39, 29, '~');
+  g.put(34, 34, 'P');
   // tier 3 (row 29, walk west): torch, dark, cobwebs, a 3-high wall
   g.put(38, 28, 'T');
   g.rect(32, 24, 32, 28, 'w');

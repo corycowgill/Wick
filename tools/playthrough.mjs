@@ -21,16 +21,39 @@ if (mode === 'routes') {
   for (const n of pick) {
     const L = LEVELS[n - 1];
     const t0 = Date.now();
-    const r = search(L, { hazards: true, record: true, firstHit: true });
+    // big levels are searched torch by torch, chaining each segment's end state
+    const segmented = process.env.SEGMENTED === '1' || L.tiles.length > 40;
+    let r = null, goal = null;
+    const parts = [];
+    if (segmented) {
+      let cur = null;
+      for (let seg = 0; seg < 12; seg++) {
+        r = search(L, { hazards: true, record: true, firstHit: true, target: 'nextTorch', startState: cur });
+        if (!r.goal) break;
+        parts.push(r.goal);
+        cur = r.goal;
+        if (cur.complete) { goal = cur; break; }
+      }
+    } else {
+      r = search(L, { hazards: true, record: true, firstHit: true });
+      goal = r.goal;
+      if (goal) parts.push(goal);
+    }
     const ms = Date.now() - t0;
-    if (!r.goal) { console.log(`L${n} ${L.name}: NO ROUTE with hazards (${r.states} states, ${ms}ms)`); continue; }
-    const frames = routeFrames(r.goal);
-    const moves = pathOf(r.goal).map((s) => s.act);
+    if (!goal) { console.log(`L${n} ${L.name}: NO ROUTE with hazards (${parts.length} segments done, ${ms}ms)`); continue; }
+    const frameParts = parts.map((g) => routeFrames(g));
+    const frames = new Int8Array(frameParts.reduce((k, p) => k + p.length, 0));
+    { let o = 0; for (const p of frameParts) { frames.set(p, o); o += p.length; } }
+    const chain = parts.flatMap((g) => pathOf(g).filter((st) => st.frames));
+    const moves = ['start', ...chain.map((st) => st.act)];
+    r = { goal };
     const waits = moves.filter((m) => m.startsWith('wait')).length;
     const builds = moves.filter((m) => /drip|pillar|bridge|lift/i.test(m)).length;
     writeFileSync(join(OUT, `level${n}.json`), JSON.stringify({
       level: n, name: L.name, wax: r.goal.wax, time: r.goal.time, frames: Array.from(frames),
       moves, waits, builds,
+      // where the bot expects Wick after each move: [frame, x, feet]
+      checkpoints: (() => { let f = 0; return chain.map((st) => { f += st.frames.length / 2; return [f, +st.x.toFixed(2), +st.feet.toFixed(2), +st.wax.toFixed(3)]; }); })(),
     }));
     console.log(`L${n} ${L.name}: route ${r.goal.time.toFixed(1)}s, ${r.goal.wax.toFixed(0)} wax left, ` +
       `${moves.length} moves (${builds} builds, ${waits} waits) (${ms}ms)`);

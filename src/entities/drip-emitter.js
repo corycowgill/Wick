@@ -7,6 +7,9 @@ export class DripEmitter {
     this.type = 'drip';
     this.tx = tx; this.ty = ty;
     this.x = tx * CFG.TILE; this.y = (ty + 1) * CFG.TILE;
+    // the clock counts whole frames so every run (game, bot, replay) agrees exactly
+    this.phase0 = phase;
+    this.frames = 0;
     this.t = phase;
     this.on = false;
     this.bottom = this.y;
@@ -18,7 +21,8 @@ export class DripEmitter {
   // a few slow drops shortly before the rain starts
   get warn() { return !this.on && this.t > this.period - 0.6; }
   update(dt, world) {
-    this.t = (this.t + dt) % this.period;
+    if (dt > 0) this.frames++;
+    this.t = (this.phase0 + this.frames * CFG.STEP) % this.period;
     this.on = this.t < CFG.DRIP_ON;
     // column bottom: first sheltering cell below the emitter
     let ty = this.ty + 1;

@@ -10,13 +10,17 @@ export class WindZone {
     this.dir = opts.dir ?? -1;
     this.gust = opts.gust ?? 2.0;      // seconds of push
     this.calm = opts.calm ?? 2.6;      // seconds between gusts (includes the warning)
-    this.t = opts.phase ?? 0;
+    // the clock counts whole frames so every run (game, bot, replay) agrees exactly
+    this.phase0 = opts.phase ?? 0;
+    this.frames = 0;
+    this.t = this.phase0;
     this.state = 'idle';
     this.strength = 0;                 // 0..1 visual intensity
   }
   get period() { return this.gust + this.calm; }
   update(dt) {
-    this.t = (this.t + dt) % this.period;
+    if (dt > 0) this.frames++;
+    this.t = (this.phase0 + this.frames * CFG.STEP) % this.period;
     const warnStart = this.calm - CFG.WIND_WARN;
     if (this.t < warnStart) this.state = 'idle';
     else if (this.t < this.calm) this.state = 'warn';

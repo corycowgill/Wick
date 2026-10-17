@@ -216,7 +216,9 @@ export function search(levelData, opts = {}) {
     best.set(k, s);
     heapPush(queue, s);
   };
-  push({ x: start.x, feet: start.feet, wax: start.wax, pm: startPump, tm: startTorch, time: 0, parent: null, act: 'start', arrivals: [] });
+  // startState: continue from a state of an earlier search (chained, segment by segment)
+  if (opts.startState) push({ ...opts.startState, parent: null, act: 'start', frames: null, arrivals: [] });
+  else push({ x: start.x, feet: start.feet, wax: start.wax, pm: startPump, tm: startTorch, time: 0, fc: 0, parent: null, act: 'start', arrivals: [] });
 
   const maxStates = opts.maxStates || (HZ ? 200000 : 60000);
   let expanded = 0;
@@ -230,12 +232,22 @@ export function search(levelData, opts = {}) {
     for (const [name, prog, cost] of progs) {
       world.restore(base);
       applyOpened(HZ ? s.time : Infinity);
-      if (HZ) for (const [e, t0] of base.ent) e.t = (t0 + s.time) % e.period;   // hazards on the real clock
+      if (HZ) {
+        // hazards on the real clock; refresh their on/off state now, because the player
+        // reads it before the next world update would
+        for (const [e, f0] of base.ent) { e.frames = f0 + s.fc; e.update(0, world); }
+      }
+      // blobs from earlier moves still stand (they last 14s), as in real play
+      if (opts.record) for (const [bx, by, age] of s.blobs || []) {
+        const b = world.addBlob(bx, by, by * T);
+        if (b) { b.age = age; b.drawY = b.y; }
+      }
       world.torches.forEach((t, i) => { t.lit = !!(s.tm & (1 << i)); });
       world.pumpkins.forEach((pk, i) => { pk.taken = !!(s.pm & (1 << i)); });
       player.spawn(s.x + CFG.BODY_W / 2, s.feet, s.wax);
       player.h = player.targetHeight();
       player.y = s.feet - player.h;
+      player.wetTime = s.wet || 0;          // wetness carries over between moves, as in real play
       if (player.wax - cost * CFG.DRIP_COST < CFG.DRIP_MIN_LEFT && cost > 0) continue;
       arrivalWax = null;
 
@@ -256,7 +268,7 @@ export function search(levelData, opts = {}) {
         if (!player.alive) break;
         if (world.complete) { ok = true; break; }
         // settled: on the ground and at rest, so the next move starts exactly where this one ended
-        if (done && player.onGround && player.vy === 0 && (!rec || (Math.abs(player.vx) < 1 && Math.abs(player.windVx) < 1))) { ok = true; break; }
+        if (done && player.onGround && player.vy === 0 && (!rec || (player.vx === 0 && player.windVx === 0))) { ok = true; break; }
       }
       if (ignitedFuses.length) {
         const before = [...opened.values()].join();
@@ -269,7 +281,9 @@ export function search(levelData, opts = {}) {
       const pm = world.pumpkins.reduce((m, pk, i) => m | (pk.taken ? 1 << i : 0), 0);
       const ns = {
         x: player.x, feet: player.feet, wax: player.wax, pm, tm,
-        time: s.time + f * DT, parent: s, act: name, frames: rec ? Int8Array.from(rec) : null,
+        time: s.time + f * DT, fc: s.fc + f, wet: player.wetTime, parent: s, act: name,
+        blobs: opts.record ? world.blobs.map((b) => [b.tx, b.ty, b.age]) : null,
+        complete: world.complete, frames: rec ? Int8Array.from(rec) : null,
         arrivals: arrivalWax !== null ? [...s.arrivals, Math.round(arrivalWax)] : s.arrivals,
       };
       if (world.complete) {
