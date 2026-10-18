@@ -38,7 +38,7 @@ Input switches automatically to the last device you used.
 - Body height, jump height and light radius all scale with wax.
 - Torches are checkpoints (+40 wax, once). Pumpkins give +15 once.
 - Wax blobs stay solid for 14s. A glowing outline shows where the next one will land. Drip at a ledge to bridge a gap, in front of you to make a step, against a wall to rise, or mid-jump to stack a pillar.
-- Hazards: wind gusts (leaves and streaks warn you), water drips (shelter under anything solid), dark zones, cobwebs, and fuse ropes that burn gates open.
+- Hazards: wind gusts (leaves and streaks warn you; golden gusts are tailwinds that carry your jumps further, and any gust fans your flame so wax burns faster), water drips (shelter under anything solid), dark zones, cobwebs, and fuse ropes that burn gates open.
 - Pressure plates hold their door open only while something sits on them: Wick, or a wax blob (until it melts). The plate and its door share a gem colour.
 - Moving parts: carts, lifts and ferries run on their own clock (stand on one to ride). Moths fly fixed loops; a brush steals 12 wax and knocks you back.
 
@@ -48,7 +48,7 @@ Input switches automatically to the last device you used.
 |---|---|---|
 | 1 | Market Row | the whole tutorial: moving, torches, pumpkins, the dark, and dripping to step, bridge and rise |
 | 2 | Lantern Canal | soaking wax back |
-| 3 | The Windy Bridge | wind gusts |
+| 3 | The Windy Bridge | headwinds to wait out, golden tailwinds to leap with |
 | 4 | Harvest Lifts | moving carts and lifts |
 | 5 | Rain Alley | water drips and shelter |
 | 6 | Candle Works | pressure plates: hold a door open with wax |
@@ -84,6 +84,7 @@ The whole project came from this sequence of requests, lightly cleaned up for ty
 12. *"Describe how we are building this game in the readme"* (this section), and *"Add the Hallucinated Games intro to the loading."*
 13. *"Improve the graphics details in each level: add nuance and atmosphere to each level and its theme."* Each level got a signature set piece: market stalls, a cornfield with scarecrows, giant candles, canal bridges with floating lanterns, windmills, lightning and thunder, swinging bells, drifting straw, a Ferris wheel with fireworks, an aurora with frosty breath, and stained glass with embers.
 14. *"Improve the gameplay, it feels a little slow"*, then *"Collapse the tutorial levels into a faster level or two, and add more levels with more dynamic elements."* Run speed went up about 30% with gravity scaled to match, so every jump keeps the same height and reach and the levels stay valid. Deaths, level cards and the finish are quicker, and the level-complete card can be skipped. The first three levels became one tutorial street. Three new levels add moving carts, lifts and ferries, plus moths.
+15. *"Add more interesting puzzling levels"*, *"Review the wind mechanic and make the bridge level more challenging but still passable"* and *"Add a credits scene that is funny about how AI made it."* Pressure plates and doors, and three puzzle levels: Candle Works, Firebreak and Clockwork Yard. Tailwinds, and wind now costs wax. The Windy Bridge was rebuilt around tailwind leaps; each one can also be bridged with wax. A credits roll lists the real prompts. A build number is on the title screen.
 
 ### Technology
 

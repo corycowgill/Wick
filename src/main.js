@@ -247,6 +247,13 @@ function newGame(i = 0) {
   startLevel(i);
 }
 
+function toCredits() {
+  state.scene = 'credits';
+  state.creditsAt = state.time;
+  state.creditScroll = 0;
+  state.tap = null;
+}
+
 function toTitle() {
   state.scene = 'title';
   state.titleMenu = false;
@@ -263,6 +270,7 @@ function titleItems() {
   if (i > 0) items.push({ label: `Continue: ${LEVELS[i].name}`, act: () => newGame(i) });
   items.push({ label: i > 0 ? 'New game' : 'Start', act: () => newGame(0) });
   if (reachedSet().size > 1) items.push({ label: 'Choose level', act: () => { state.scene = 'select'; state.sel = i; } });
+  items.push({ label: 'Credits', act: () => toCredits() });
   return items;
 }
 
@@ -333,7 +341,14 @@ function update(dt) {
 
   if (state.scene === 'end') {
     state.particles.update(dt);
-    if (state.time > state.endAt + 1.2 && (input.anyPressed || state.tap)) { state.tap = null; toTitle(); }
+    if (state.time > state.endAt + 1.2 && (input.anyPressed || state.tap)) { state.tap = null; toCredits(); }
+    return;
+  }
+  if (state.scene === 'credits') {
+    // hold jump to fast-forward; any other press skips back to the title
+    state.creditScroll += dt * (input.jumpHeld ? 160 : 42);
+    if (state.time > state.creditsAt + 1 && (input.pausePressed || input.backPressed || input.confirmPressed && !input.jumpPressed || state.tap)) { state.tap = null; toTitle(); }
+    if (state.creditsDone) { state.creditsDone = false; toTitle(); }
     return;
   }
 
@@ -454,6 +469,8 @@ function render() {
     UI.drawSelect(ctx, t, LEVELS, reachedSet(), state.sel, Input.lastDevice);
   } else if (state.scene === 'end') {
     UI.drawEnd(ctx, t, state.stats, Input.lastDevice);
+  } else if (state.scene === 'credits') {
+    if (!UI.drawCredits(ctx, t, state.creditScroll, Input.lastDevice)) state.creditsDone = true;
   } else {
     renderPlay(t);
   }

@@ -110,6 +110,7 @@ export class Player {
     if (wind !== 0) {
       this.windVx = clamp(this.windVx + wind * dt, -CFG.WIND_MAX, CFG.WIND_MAX);
       this.flicker = CFG.WIND_FLICKER;
+      this.wax -= CFG.WIND_DRAIN * dt;
     } else {
       this.windVx = approach(this.windVx, 0, (this.onGround ? 1000 : 430) * dt);
       this.flicker = Math.max(0, this.flicker - dt * 0.5);

@@ -3,6 +3,7 @@ import { CFG, clamp, lerp } from './config.js';
 import { drawFlame, drawWick } from './render/draw-wick.js';
 import { drawBackground } from './render/draw-world.js';
 import { BUILD, BUILD_DATE } from './version.js';
+import { CREDITS, CREDIT_STEP } from './credits.js';
 
 const W = CFG.VIEW_W, H = CFG.VIEW_H;
 const SERIF = 'Georgia, "Times New Roman", serif';
@@ -161,7 +162,7 @@ export const UI = {
     titleText(ctx, 'WICK', W / 2, H * 0.17, 104, true);
     ctx.font = `italic 19px ${SERIF}`;
     ctx.fillStyle = '#fbe9c8';
-    ctx.fillText('a candle-cat. reach the next torch before you burn down.', W / 2, H * 0.29);
+    ctx.fillText('A candle-cat. Reach the next torch before you burn out.', W / 2, H * 0.29);
 
     if (opts.menu) {
       this.drawMenu(ctx, null, opts.menu, opts.selected, { backdrop: 'rgba(0,0,0,0)', top: H * 0.7 });
@@ -216,6 +217,44 @@ export const UI = {
     ctx.fillStyle = `rgba(255,214,140,${0.6 + 0.4 * a})`;
     ctx.fillText(msg, W / 2, H * 0.82);
     this.menuRects = [{ x: 0, y: 0, w: W, h: H }];
+  },
+
+  // ---------------------------------------------------------------- credits
+  // returns false once the last line has scrolled off the top
+  drawCredits(ctx, time, scroll, device) {
+    drawBackground(ctx, { x: time * 12, y: 0, w: W, h: H }, END_WORLD, time);
+    ctx.fillStyle = 'rgba(14,6,28,0.62)'; ctx.fillRect(0, 0, W, H);
+    ctx.textAlign = 'center'; ctx.textBaseline = 'middle';
+    let y = H + 30 - scroll;
+    for (const [kind, text] of CREDITS) {
+      const step = CREDIT_STEP[kind];
+      if (y > -60 && y < H + 60 && text) {
+        // fade near the top and bottom edges
+        const a = Math.max(0, Math.min(1, Math.min(y / 70, (H - y) / 70)));
+        ctx.globalAlpha = a;
+        if (kind === 'h') titleText(ctx, text, W / 2, y, 44, true);
+        else if (kind === 'r') { ctx.font = `700 15px ${SANS}`; ctx.fillStyle = '#e8a860'; ctx.fillText(text.toUpperCase(), W / 2, y); }
+        else if (kind === 'n') { ctx.font = `700 28px ${SERIF}`; ctx.fillStyle = '#ffe2b0'; ctx.fillText(text, W / 2, y); }
+        else if (kind === 'q') { ctx.font = `italic 22px ${SERIF}`; ctx.fillStyle = '#fbe9c8'; ctx.fillText(text, W / 2, y); }
+        else { ctx.font = `15px ${SANS}`; ctx.fillStyle = 'rgba(251,233,200,0.75)'; ctx.fillText(text, W / 2, y); }
+        ctx.globalAlpha = 1;
+      }
+      y += step;
+    }
+    // a small Wick watching the credits from the corner
+    ctx.save();
+    ctx.translate(W - 70, H - 26);
+    ctx.scale(1.4, 1.4);
+    TITLE_WICK.x = -TITLE_WICK.w / 2; TITLE_WICK.y = -TITLE_WICK.h;
+    drawWick(ctx, TITLE_WICK, time);
+    ctx.restore();
+    ctx.font = `13px ${SANS}`;
+    ctx.fillStyle = 'rgba(251,233,200,0.55)';
+    ctx.textAlign = 'left';
+    ctx.fillText(device === 'touch' ? 'Tap to skip' : 'Press any button to skip', 16, H - 18);
+    ctx.textAlign = 'center';
+    this.menuRects = [{ x: 0, y: 0, w: W, h: H }];
+    return y > -20;
   },
 
   // ---------------------------------------------------------------- level select

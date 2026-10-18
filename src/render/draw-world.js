@@ -1506,7 +1506,8 @@ export function drawWindStreaks(ctx, cam, world, time) {
       const y = r.y + ((i * 61.7) % r.h);
       if (x < cam.x - 80 || x > cam.x + cam.w + 80) continue;
       const len = 40 + (i % 3) * 25;
-      ctx.strokeStyle = `rgba(255,240,250,${0.22 * z.strength})`;
+      // tailwinds (blowing the way the level goes) are golden, headwinds pale
+      ctx.strokeStyle = z.dir > 0 ? `rgba(255,214,120,${0.3 * z.strength})` : `rgba(255,240,250,${0.22 * z.strength})`;
       ctx.lineWidth = 1.5 + (i % 2);
       ctx.beginPath();
       ctx.moveTo(x, y);

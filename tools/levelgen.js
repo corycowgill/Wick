@@ -199,34 +199,54 @@ function write(n, meta, g) {
 }
 
 // ---------------------------------------------------------------- windy
+// Headwinds push you back (wait them out); tailwinds carry you across gaps too
+// wide to jump (leap with the gust, or bridge them the slow way).
 {
-  const g = new Grid(142, 20);
+  const g = new Grid(152, 20);
   g.ground(0, 12, 14).put(3, 13, 'S');
   g.sign(6, 13, 'Leaves swirl before a gust. Wait, then dash.');
   g.sign(10, 13, 'Fell in? Drip a step to climb back out.');
-  g.ground(13, 141, 17);                              // valley floor
+  g.ground(13, 151, 18);                              // valley floor: 4 below the decks
   const deck = (x0, x1) => {
     g.rect(x0, 14, x1, 14);
-    for (let x = x0 + 2; x <= x1 - 1; x += 5) g.rect(x, 15, x, 16);
+    for (let x = x0 + 2; x <= x1 - 1; x += 5) g.rect(x, 15, x, 17);
   };
+  // 1. headwind over short gaps
   deck(16, 27);                                       // gap 13-15 (3)
   deck(32, 44);                                       // gap 28-31 (4)
-  g.rect(40, 12, 44, 16).put(42, 11, 'T');
-  deck(49, 60);                                       // gap 45-48 (4)
+  g.rect(40, 12, 44, 17).put(42, 11, 'T');
+  g.fill(13, 5, 38, 13, 'W');
+  // 2. a tailwind leap: 6 wide, too far to jump in still air
+  g.sign(38, 11, 'Golden gusts blow your way. Leap with one.');
+  deck(51, 60);                                       // gap 45-50 (6)
+  g.fill(40, 5, 54, 13, 'W');                         // starts over the take-off ledge
+  g.put(57, 13, 'P');
+  // 3. headwind decks, then another tailwind leap
   deck(64, 72);                                       // gap 61-63 (3)
-  g.put(68, 13, 'P');
-  deck(77, 90);                                       // gap 73-76 (4)
-  g.rect(84, 12, 88, 16).put(86, 11, 'T');
-  deck(95, 104);                                      // gap 91-94 (4)
-  deck(109, 122);                                     // gap 105-108 (4)
-  g.ground(123, 141, 14).put(134, 13, 'G').put(128, 13, 'n');
-  for (const x of [14, 29, 46, 62, 74, 92, 106]) g.put(x, 16, '#'); // escape steps
-  g.fill(13, 5, 39, 13, 'W');
-  g.fill(45, 5, 83, 13, 'W');
-  g.fill(89, 5, 122, 13, 'W');
-  g.entities.push({ type: 'wind', phase: 0 }, { type: 'wind', phase: 1.6 }, { type: 'wind', phase: 3.1 });
+  g.fill(58, 5, 68, 13, 'W');
+  deck(79, 92);                                       // gap 73-78 (6)
+  g.fill(70, 5, 82, 13, 'W');
+  g.rect(88, 12, 92, 17).put(90, 11, 'T');
+  // 4. single posts in a headwind: lean into it
+  for (const x of [96, 99, 102, 105]) g.rect(x, 14, x, 17);
+  g.fill(94, 5, 107, 13, 'W');
+  g.sign(92, 11, 'Hold into the wind. It also fans your flame: wax burns faster.');
+  deck(108, 116);
+  g.put(112, 13, 'P');
+  // 5. last tailwind leap to the goal
+  g.ground(123, 151, 14).put(144, 13, 'G').put(134, 13, 'n');   // gap 117-122 (6)
+  g.fill(113, 5, 125, 13, 'W');
+  for (const x of [14, 29, 46, 62, 74, 94, 97, 100, 103, 106, 118]) g.rect(x, 16, x, 17); // escape steps (2 up, then 2 up)
+  g.entities.push(
+    { type: 'wind', dir: -1, phase: 0 },
+    { type: 'wind', dir: 1, phase: 0.8 },
+    { type: 'wind', dir: -1, phase: 2.4 },
+    { type: 'wind', dir: 1, phase: 0.4 },
+    { type: 'wind', dir: -1, gust: 2.0, calm: 2.4, phase: 1.0 },
+    { type: 'wind', dir: 1, phase: 1.9 },
+  );
   define('windy', {
-    name: 'The Windy Bridge', hint: 'Time your runs between gusts.',
+    name: 'The Windy Bridge', hint: 'Ride the tailwinds.',
     extra: { theme: 'wind', ambient: 0.82, wind: { dir: -1, gust: 1.5, calm: 3.0 } },
   }, g);
 }

@@ -61,6 +61,7 @@ export const CFG = {
   WIND_MAX: 194,          // px/s top wind speed
   WIND_WARN: 1.0,         // seconds of leaf swirl before a gust
   WIND_FLICKER: 0.15,
+  WIND_DRAIN: 1.0,        // extra wax per second while a gust fans the flame
   WATER_KILL_TIME: 0.6,   // seconds exposed to a drip column
   DRIP_ON: 1.7,           // emitter cycle (seconds raining)
   DRIP_OFF: 1.5,          // emitter cycle (seconds dry)
