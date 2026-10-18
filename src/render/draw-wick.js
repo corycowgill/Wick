@@ -17,6 +17,7 @@ export function drawWick(ctx, p, time, opts = {}) {
   ctx.save();
   ctx.translate(cx, fy);
   if (opts.scale) ctx.scale(opts.scale, opts.scale);
+  if (p.hurt > 0 && Math.floor(time * 18) % 2) ctx.globalAlpha = 0.45;   // moth-hit blink
 
   if (!p.alive && p.deathReason === 'burnout') {
     drawPuddle(ctx, w, time);

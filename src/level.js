@@ -1,6 +1,6 @@
 // Parses ASCII level data into a live world: grid, entities, lights, hazards.
 import { CFG } from './config.js';
-import { EMPTY, STONE, ONEWAY, BLOB, COBWEB, GATE, EMITTER, isFull } from './physics.js';
+import { EMPTY, STONE, ONEWAY, BLOB, COBWEB, GATE, EMITTER, DOOR, isFull } from './physics.js';
 import { Events } from './events.js';
 import { Torch } from './entities/torch.js';
 import { Pumpkin } from './entities/pumpkin.js';
@@ -10,6 +10,8 @@ import { WindZone } from './entities/wind.js';
 import { DripEmitter } from './entities/drip-emitter.js';
 import { Cobweb } from './entities/cobweb.js';
 import { Fuse, Gate } from './entities/fuse.js';
+import { Mover } from './entities/mover.js';
+import { Moth } from './entities/moth.js';
 
 const PROP_CHARS = { h: 'hay', j: 'jack', b: 'barrel', k: 'crate', n: 'banner', l: 'lamp' };
 
@@ -41,6 +43,8 @@ export function createWorld(data) {
   const emitters = [];
   const torches = [];
   const pumpkins = [];
+  const plates = [];
+  const doorMask = new Uint8Array(w * h);
   let spawn = null, goal = null;
 
   const key = (tx, ty) => ty * w + tx;
@@ -72,6 +76,8 @@ export function createWorld(data) {
         case 'f': { const e = new Fuse(tx, ty); flammables.set(k, e); entities.push(e); break; }
         case 'g': { grid[k] = GATE; const e = new Gate(tx, ty); flammables.set(k, e); entities.push(e); break; }
         case 'W': windMask[k] = 1; break;
+        case 'o': plates.push({ tx, ty, pressed: false, door: -1 }); break;
+        case 'd': grid[k] = DOOR; doorMask[k] = 1; break;
         case 'D': dark[k] = 1; break;
         default:
           if (PROP_CHARS[c]) props.push({ kind: PROP_CHARS[c], tx, ty, ...floorEntity(tx, ty) });
@@ -129,6 +135,46 @@ export function createWorld(data) {
     entities.push(z);
   });
 
+  // Doors: connected runs of 'd' cells, left to right. Plate i opens door i
+  // (plates also sorted left to right) unless data.links maps plate -> door.
+  const doors = [];
+  const doorSeen = new Uint8Array(w * h);
+  for (let tx = 0; tx < w; tx++) for (let ty = 0; ty < h; ty++) {
+    if (!doorMask[key(tx, ty)] || doorSeen[key(tx, ty)]) continue;
+    const cells = [];
+    const stack = [[tx, ty]];
+    doorSeen[key(tx, ty)] = 1;
+    while (stack.length) {
+      const [cx, cy] = stack.pop();
+      cells.push([cx, cy]);
+      for (const [nx, ny] of [[cx + 1, cy], [cx - 1, cy], [cx, cy + 1], [cx, cy - 1]]) {
+        if (nx < 0 || ny < 0 || nx >= w || ny >= h) continue;
+        const nk = key(nx, ny);
+        if (doorMask[nk] && !doorSeen[nk]) { doorSeen[nk] = 1; stack.push([nx, ny]); }
+      }
+    }
+    cells.sort((a, b) => a[1] - b[1] || a[0] - b[0]);
+    doors.push({ cells, tx: Math.min(...cells.map((c) => c[0])), open: false, amt: 0, index: doors.length });
+  }
+  plates.sort((a, b) => a.tx - b.tx || a.ty - b.ty);
+  plates.forEach((pl, i) => { pl.door = data.links ? data.links[i] : i; });
+
+  // Movers and moths: given in tile units; they run on the frame clock like wind and rain.
+  const movers = [], moths = [];
+  for (const e of data.entities || []) {
+    if (e.type === 'mover') {
+      const [bx, by] = e.to;
+      const m = new Mover({ ax: e.x * T, ay: e.y * T, bx: bx * T, by: by * T, w: (e.w || 3) * T, period: e.period, phase: e.phase, style: e.style });
+      movers.push(m); entities.push(m);
+    } else if (e.type === 'moth') {
+      const c = (v) => (v + 0.5) * T;
+      const m = e.to
+        ? new Moth({ path: 'line', ax: c(e.x), ay: c(e.y), bx: c(e.to[0]), by: c(e.to[1]), period: e.period, phase: e.phase })
+        : new Moth({ cx: c(e.x), cy: c(e.y), r: (e.r ?? 2) * T, period: e.period, phase: e.phase });
+      moths.push(m); entities.push(m);
+    }
+  }
+
   const signs = (data.entities || []).filter((e) => e.type === 'sign').map((s) => ({
     ...s, px: (s.x + 0.5) * T, py: (s.y + 1) * T,
   }));
@@ -142,7 +188,7 @@ export function createWorld(data) {
     tiles,
     grid, dark,
     entities,
-    torches, pumpkins, goal, emitters, flammables, props, signs,
+    torches, pumpkins, goal, emitters, flammables, props, signs, movers, moths, plates, doors,
     blobs: [],
     spawn,
     checkpoint: { x: spawn.x, y: spawn.y, wax: CFG.WAX_MAX },
@@ -207,6 +253,10 @@ export function createWorld(data) {
       for (const e of entities) if (e.type === 'wind') a += e.push(body);
       return a;
     },
+    mothHit(body) {
+      for (const m of moths) if (m.hits(body)) return m;
+      return null;
+    },
     windZones() { return entities.filter((e) => e.type === 'wind'); },
     wetAt(body) {
       for (const e of emitters) if (e.wets(body)) return true;
@@ -230,6 +280,35 @@ export function createWorld(data) {
       this.time += dt;
       for (const e of entities) e.update(dt, this, player);
       for (let i = this.blobs.length - 1; i >= 0; i--) this.blobs[i]?.update(dt, this);
+      this.updateDoors(player, dt);
+    },
+
+    // A plate is held down by wax sitting on it, or by Wick standing on it.
+    // Its door is open while any of its plates are held. A closing door never
+    // shuts on Wick or on a blob wedged in the doorway.
+    updateDoors(player, dt = 0) {
+      if (!plates.length) return;
+      for (const pl of plates) {
+        const onIt = player && player.alive && player.onGround &&
+          player.x < (pl.tx + 1) * T && player.x + player.w > pl.tx * T && Math.abs(player.feet - (pl.ty + 1) * T) < 1;
+        const was = pl.pressed;
+        pl.pressed = grid[key(pl.tx, pl.ty)] === BLOB || !!onIt;
+        if (dt > 0 && was !== pl.pressed) Events.emit('plate', { x: (pl.tx + 0.5) * T, y: (pl.ty + 1) * T, down: pl.pressed });
+      }
+      for (const d of doors) {
+        const wasOpen = d.open;
+        d.open = plates.some((pl) => pl.door === d.index && pl.pressed);
+        if (dt > 0 && wasOpen !== d.open) Events.emit('door', { x: (d.tx + 0.5) * T, y: (d.cells[d.cells.length - 1][1] + 1) * T, open: d.open });
+        for (const [cx, cy] of d.cells) {
+          const k = key(cx, cy);
+          if (d.open) { if (grid[k] === DOOR) grid[k] = EMPTY; continue; }
+          if (grid[k] !== EMPTY) continue;
+          if (player && player.alive && player.x < (cx + 1) * T && player.x + player.w > cx * T &&
+              player.y < (cy + 1) * T && player.y + player.h > cy * T) continue;
+          grid[k] = DOOR;
+        }
+        d.amt += ((d.open ? 1 : 0) - d.amt) * Math.min(1, dt * 10);
+      }
     },
 
     // Respawn at the last lit torch. Melts all blobs; burnt things stay burnt.
@@ -251,7 +330,7 @@ export function createWorld(data) {
         checkpoint: { ...this.checkpoint },
         complete: this.complete,
         time: this.time,
-        ent: entities.filter((e) => e.type === 'wind' || e.type === 'drip').map((e) => [e, e.frames]),
+        ent: entities.filter((e) => e.frames !== undefined).map((e) => [e, e.frames]),
       };
     },
     restore(s) {
@@ -264,7 +343,7 @@ export function createWorld(data) {
       this.checkpoint = { ...s.checkpoint };
       this.complete = s.complete;
       this.time = s.time;
-      for (const [e, f] of s.ent) { e.frames = f; e.t = (e.phase0 + f * CFG.STEP) % e.period; }
+      for (const [e, f] of s.ent) { e.frames = f; if (e.sync) e.sync(); else e.t = (e.phase0 + f * CFG.STEP) % e.period; }
     },
   };
   return world;

@@ -17,6 +17,7 @@ import { Audio } from './audio.js';
 import { UI } from './ui.js';
 import { Post } from './render/post.js';
 import { drawThemeWorld, updateThemeFx, drawThemeOverlay } from './render/theme-fx.js';
+import { drawMovers, drawMoths, drawMothGlows, drawDoors, drawPlates, drawPlateGlows } from './render/draw-dynamic.js';
 import LEVEL_LIST from './levels/index.js';
 
 export { Events };
@@ -182,6 +183,17 @@ Events.on('pickup', (e) => {
 });
 Events.on('blobLand', (e) => { P.splat(e.x, e.y - 4, 6); P.dust(e.x, e.y, 4, 0.5); });
 Events.on('ignite', (e) => { Audio.sfx('ignite'); P.sparks(e.x, e.y, 6, 90); });
+Events.on('plate', (e) => { Audio.sfx('plate', { down: e.down }); if (e.down) P.dust(e.x, e.y, 4, 0.4); });
+Events.on('door', (e) => { Audio.sfx('door', { open: e.open }); P.dust(e.x, e.y, 8, 0.7); state.camera.shake(1.5); });
+Events.on('moth', (e) => {
+  Audio.sfx('moth');
+  state.hudFail = 1;
+  P.sparks(e.x, e.y, 10, 120, '255,230,190');
+  P.smoke(e.x, e.y, 4);
+  state.camera.shake(3);
+  state.hitStop = 2;
+  Input.gamepad.rumble('land');
+});
 Events.on('steam', (e) => { Audio.sfx('steam'); P.steam(e.x, e.y); });
 Events.on('death', (e) => {
   Audio.sfx(e.reason === 'water' ? 'extinguish' : 'burnout');
@@ -346,6 +358,8 @@ function update(dt) {
 
   if (state.completeTimer > 0) {
     state.completeTimer -= dt;
+    // skip the rest of the celebration once the card is up
+    if (state.completeMax - state.completeTimer > 1 && (input.jumpPressed || input.confirmPressed)) state.completeTimer = 0;
     world.update(dt, null);
     if (state.completeTimer <= 0) {
       if (state.levelIndex + 1 < LEVELS.length) startLevel(state.levelIndex + 1);
@@ -364,7 +378,7 @@ function update(dt) {
     world.update(dt, player);
     state.stats.time += dt;
     state.levelStats.time += dt;
-    if (!player.alive) state.iris = Math.min(state.iris, Math.max(0, player.deathTimer / 0.45));
+    if (!player.alive) state.iris = Math.min(state.iris, Math.max(0, player.deathTimer / 0.35));
     if (!player.alive && player.deathTimer <= 0) {
       state.stats.deaths++;
       state.levelStats.deaths++;
@@ -404,6 +418,7 @@ function update(dt) {
     P.sparks(fp.x, fp.y - 8, 2, 60, '255,120,50');
     if (Math.random() < 0.4) P.smoke(fp.x, fp.y - 10, 1);
   }
+  for (const mo of world.moths) if (Math.random() < 3 * dt && Math.abs(mo.x - player.cx) < W) P.mote(mo.x, mo.y);
   for (const f of world.flammables.values()) if (f.state === 'burning' && Math.random() < 20 * dt) P.ash(f.x + 16, f.y + 16);
   for (const b of world.blobs) if (b.drawY < b.y && Math.random() < 0.8) P.waxTrail(b.x + 16, b.drawY + 8);
   if (state.fireworks > 0) {
@@ -421,7 +436,7 @@ function update(dt) {
   state.flash = Math.max(0, state.flash - dt * 2.2);
   state.hudFail = Math.max(0, (state.hudFail || 0) - dt * 2.5);
   Input.touch.setEnabled('drip', player.canAffordDrip());
-  if (player.alive) state.iris = Math.min(1, state.iris + dt * 1.8);
+  if (player.alive) state.iris = Math.min(1, state.iris + dt * 3);
   Audio.setFlame(player.waxFrac(), player.alive);
   Audio.setTempo(player.waxFrac());
 }
@@ -459,12 +474,16 @@ function renderPlay(t) {
   drawProps(ctx, cam, world, t);
   drawSignPosts(ctx, cam, world);
   drawEntities(ctx, cam, world, t);
+  drawMovers(ctx, cam, world, t);
+  drawDoors(ctx, cam, world, t);
+  drawPlates(ctx, cam, world, t);
   drawJumpShadow(ctx, world, player);
   P.draw(ctx, 'world');
   if (!state.completeTimer) {
     drawDripGuide(ctx, player, world, t, { absorbGlyph: UI.glyphs(Input.lastDevice).absorb });
   }
   drawWick(ctx, player, t);
+  drawMoths(ctx, cam, world, t);
   drawMist(ctx, cam, world, t);
   ctx.restore();
 
@@ -477,6 +496,8 @@ function renderPlay(t) {
   drawDecorGlows(ctx, t);
   ctx.globalCompositeOperation = 'lighter';
   drawFlameTrail(ctx, player);
+  drawMothGlows(ctx, cam, world, t);
+  drawPlateGlows(ctx, cam, world, t);
   P.draw(ctx, 'glow');
   ctx.globalCompositeOperation = 'source-over';
   drawWindStreaks(ctx, cam, world, t);

@@ -345,6 +345,17 @@ export const Audio = {
       case 'bell':
         [196, 392, 588, 784].forEach((f, i) => tone('sine', f * 1.003, f, 3.2 - i * 0.5, 0.06 / (i + 1), sfxBus, t, 0.004));
         break;
+      case 'plate':
+        tone('square', opts.down ? 220 : 180, opts.down ? 160 : 140, 0.06, 0.06);
+        break;
+      case 'door':
+        tone('sawtooth', opts.open ? 70 : 110, opts.open ? 110 : 60, 0.35, 0.07);
+        noise(0.3, 0.08, 'lowpass', 700, 200, 0.8);
+        break;
+      case 'moth':
+        for (let i = 0; i < 5; i++) noise(0.04, 0.07, 'bandpass', 900, 1400, 3, t + i * 0.035);
+        tone('sine', 480, 160, 0.3, 0.1, sfxBus, t + 0.05);
+        break;
       case 'menu':
         tone('triangle', 520, 520, 0.06, 0.07);
         break;

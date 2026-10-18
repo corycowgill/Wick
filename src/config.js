@@ -24,14 +24,14 @@ export const CFG = {
   BODY_W: 24,
   BODY_H_MIN: 20,
   BODY_H_MAX: 56,
-  GROW_RATE: 90,          // px/s the body grows back after a refill
+  GROW_RATE: 150,          // px/s the body grows back after a refill
 
   // movement
-  GRAVITY: 1800,
-  MAX_FALL: 900,
-  RUN_SPEED: 170,
-  ACCEL: 1200,
-  FRICTION: 1400,
+  GRAVITY: 3000,         // scaled with RUN_SPEED (g ~ speed^2) so jump heights AND reach match the level design
+  MAX_FALL: 1160,
+  RUN_SPEED: 220,
+  ACCEL: 2200,
+  FRICTION: 2800,
   AIR_CONTROL: 0.95,
   JUMP_APEX_MIN: 0.9,     // tiles at zero wax
   JUMP_APEX_RANGE: 2.3,   // extra tiles at full wax
@@ -40,7 +40,7 @@ export const CFG = {
   JUMP_BUFFER: 0.12,
   // feel
   FALL_GRAVITY_MULT: 1.15,  // a bit heavier on the way down: snappier jumps
-  APEX_HANG_VEL: 80,        // near the top of a held jump...
+  APEX_HANG_VEL: 104,       // near the top of a held jump...
   APEX_HANG_MULT: 0.55,     // ...gravity eases off for a moment of hang time
   TURN_BOOST: 1.8,          // extra acceleration when reversing direction
   CORNER_NUDGE: 7,          // px: slide around ceiling corners instead of bonking
@@ -57,13 +57,15 @@ export const CFG = {
   FIRE_LIGHT: 60,
 
   // hazards
-  WIND_PUSH: 320,         // px/s^2 ramp while a gust blows
-  WIND_MAX: 150,          // px/s top wind speed
+  WIND_PUSH: 540,         // px/s^2 ramp while a gust blows
+  WIND_MAX: 194,          // px/s top wind speed
   WIND_WARN: 1.0,         // seconds of leaf swirl before a gust
   WIND_FLICKER: 0.15,
   WATER_KILL_TIME: 0.6,   // seconds exposed to a drip column
   DRIP_ON: 1.7,           // emitter cycle (seconds raining)
   DRIP_OFF: 1.5,          // emitter cycle (seconds dry)
+  MOTH_STEAL: 12,         // wax a moth takes when it brushes Wick
+  MOTH_INVULN: 1.0,       // seconds before another moth can hit
 
   // wax blobs
   BLOB_LIFE: 14,
@@ -73,9 +75,9 @@ export const CFG = {
   DRIP_BUFFER: 0.3,       // seconds an airborne drip keeps trying to find room
 
   // flow
-  DEATH_DELAY: 0.85,
-  LEVEL_CARD_TIME: 2.0,
-  GOAL_DELAY: 1.7,
+  DEATH_DELAY: 0.6,
+  LEVEL_CARD_TIME: 1.6,
+  GOAL_DELAY: 1.2,
 };
 
 export const lerp = (a, b, t) => a + (b - a) * t;

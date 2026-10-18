@@ -18,14 +18,14 @@ export class Camera {
     };
   }
   snap(player, world) {
-    this.look = player.facing * 50;
+    this.look = player.facing * 80;
     const t = this.target(player, world);
     this.x = t.x; this.y = t.y;
   }
   update(dt, player, world) {
-    this.look += (player.facing * 50 - this.look) * Math.min(1, dt * 2.5);
+    this.look += (player.facing * 80 - this.look) * Math.min(1, dt * 3);
     const t = this.target(player, world);
-    const kx = 1 - Math.exp(-dt * 6), ky = 1 - Math.exp(-dt * 4.5);
+    const kx = 1 - Math.exp(-dt * 8), ky = 1 - Math.exp(-dt * 5.5);
     this.x += (t.x - this.x) * kx;
     this.y += (t.y - this.y) * ky;
     this.shakeAmt = Math.max(0, this.shakeAmt - dt * 30);

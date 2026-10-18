@@ -103,6 +103,47 @@ export function drawThemeBackdrop(ctx, cam, world, time, th, lift) {
     case 'canal': return drawCanalBridges(ctx, cam, time, lift);
     case 'wind': return drawWindmills(ctx, cam, time, lift);
     case 'fair': return drawFerrisWheel(ctx, cam, time, lift);
+    case 'works': return drawWaxVats(ctx, cam, time, lift);
+  }
+}
+
+// the candle works: great copper vats of molten wax, pipes and a rack of new candles
+function drawWaxVats(ctx, cam, time, lift) {
+  const f = 0.35, span = 420, base = H + 10 + lift * f;
+  const off = cam.x * f;
+  for (let i = Math.floor(off / span) - 1; i < Math.floor(off / span) + 4; i++) {
+    const x = i * span - off + 80, w = 120, h = 150 + (Math.abs(i * 53) % 60);
+    const top = base - h;
+    // pipe overhead feeding the vat
+    ctx.fillStyle = '#3a2216';
+    ctx.fillRect(x + w / 2 - 6, 0, 12, top - 30);
+    ctx.fillRect(x + w / 2 - 6, top - 40, span * 0.55, 12);
+    ctx.fillStyle = '#5a3420';
+    for (let k = 0; k < 4; k++) ctx.fillRect(x + w / 2 - 9, 40 + k * 70, 18, 6);
+    // the vat
+    ctx.fillStyle = '#4a2a1a';
+    ctx.beginPath();
+    ctx.moveTo(x, top); ctx.lineTo(x + w, top); ctx.lineTo(x + w - 10, base); ctx.lineTo(x + 10, base); ctx.closePath(); ctx.fill();
+    ctx.fillStyle = '#6a3e22';
+    ctx.fillRect(x - 6, top - 6, w + 12, 10);
+    for (let k = 1; k < 4; k++) ctx.fillRect(x + 2 + k * 2, top + k * 40, w - 4 - k * 4, 4);
+    // molten wax glowing at the brim, with a slow drip down the side
+    const heat = 0.7 + 0.3 * Math.sin(time * 1.7 + i);
+    glow(x + w / 2, top - 4, 90, '255,150,60', 0.16 * heat);
+    glow(x + w / 2, top - 2, 46, '255,210,120', 0.3 * heat);
+    const dy = ((time * 30 + i * 47) % (h - 20));
+    ctx.fillStyle = '#e8c890';
+    ctx.beginPath(); ctx.arc(x + w - 14, top + 6 + dy, 3, 0, 6.283); ctx.fill();
+    // a rack of candles cooling beside it
+    const rx = x + w + 60, ry = base - 70;
+    ctx.fillStyle = '#2e1a12'; ctx.fillRect(rx, ry, 110, 6); ctx.fillRect(rx, ry + 40, 110, 6);
+    ctx.fillRect(rx, ry - 50, 5, 120); ctx.fillRect(rx + 105, ry - 50, 5, 120);
+    ctx.fillStyle = '#d8c4a0';
+    for (let k = 0; k < 8; k++) {
+      const ch = 18 + (Math.abs(i * 7 + k * 13) % 14);
+      ctx.fillRect(rx + 8 + k * 12, ry - ch, 6, ch);
+      ctx.fillRect(rx + 8 + k * 12, ry + 40 - ch * 0.8, 6, ch * 0.8);
+    }
   }
 }
 
@@ -338,6 +379,10 @@ export function updateThemeFx(dt, P, cam, world, player, th, sfx) {
         s.thunder = 0.5 + rnd() * 1.2;
       }
       if (s.thunder > 0 && (s.thunder -= dt) <= 0) sfx('thunder');
+      break;
+    case 'works':
+      if (rnd() < 4 * dt) P.steam(cam.x + rnd() * cam.w, cam.y + rnd() * cam.h * 0.4);
+      if (rnd() < 3 * dt) P.ember(cam.x + rnd() * cam.w, cam.y + cam.h + 10, 0.4, 0);
       break;
     case 'tower':
       s.chime -= dt;

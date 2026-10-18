@@ -32,6 +32,8 @@ export class Player {
     this.landTimer = 0;
     this.steamTimer = 0;
     this.dripBuffer = 0;   // an airborne drip waits briefly until there is room under you
+    this.riding = null;    // moving platform underfoot
+    this.hurt = 0;         // moth-hit invulnerability
     this.stats = { jumps: 0, drips: 0 };
   }
 
@@ -70,6 +72,13 @@ export class Player {
       return;
     }
 
+    // --- riding a moving platform: move with it first ---
+    if (this.riding) {
+      const m = this.riding;
+      if (!rectBlocked(world, this.x + m.dx, this.y, this.w, this.h)) this.x += m.dx;
+      if (!rectBlocked(world, this.x, this.y + m.dy, this.w, this.h)) this.y += m.dy;
+    }
+
     // --- height follows wax, anchored at the feet ---
     const target = this.targetHeight();
     if (target < this.h) {
@@ -102,7 +111,7 @@ export class Player {
       this.windVx = clamp(this.windVx + wind * dt, -CFG.WIND_MAX, CFG.WIND_MAX);
       this.flicker = CFG.WIND_FLICKER;
     } else {
-      this.windVx = approach(this.windVx, 0, (this.onGround ? 600 : 260) * dt);
+      this.windVx = approach(this.windVx, 0, (this.onGround ? 1000 : 430) * dt);
       this.flicker = Math.max(0, this.flicker - dt * 0.5);
     }
 
@@ -136,14 +145,14 @@ export class Player {
     const dirX = Math.sign(this.vx + this.windVx);
     const res = moveAndCollide(this, (this.vx + this.windVx) * dt, this.vy * dt, world);
     // corner correction: clipped a ceiling edge while rising? slide past it
-    if (res.ceiling && riseSpeed < -120) {
+    if (res.ceiling && riseSpeed < -155) {
       for (let off = 1; off <= CFG.CORNER_NUDGE; off++) {
         const hit = [off, -off].find((o) => !rectBlocked(world, this.x + o, this.y - 2, this.w, this.h));
         if (hit !== undefined) { this.x += hit; res.ceiling = false; break; }
       }
     }
     // ledge assist: just missed the lip of a ledge? pop up onto it
-    if (res.hitX && !res.landed && !this.onGround && riseSpeed > -160 && dirX === res.hitX) {
+    if (res.hitX && !res.landed && !this.onGround && riseSpeed > -207 && dirX === res.hitX) {
       for (let lift = 1; lift <= CFG.LEDGE_ASSIST; lift++) {
         if (!rectBlocked(world, this.x + dirX * 2, this.y - lift, this.w, this.h)) {
           this.y -= lift;
@@ -160,15 +169,17 @@ export class Player {
     if (res.ceiling) this.vy = 0;
     const wasGround = this.onGround;
     if (res.landed) {
-      if (!wasGround && fallSpeed > 260) {
-        const hard = clamp((fallSpeed - 260) / 600, 0, 1);
+      if (!wasGround && fallSpeed > 336) {
+        const hard = clamp((fallSpeed - 336) / 776, 0, 1);
         this.squash = 0.18 + 0.25 * hard;
         Events.emit('land', { x: this.cx, y: this.feet, hard, frac: this.waxFrac() });
       }
       this.vy = 0;
       this.onGround = true;
+      this.riding = res.mover || null;
     } else {
       this.onGround = false;
+      this.riding = null;
     }
     this.squash *= Math.exp(-10 * dt);
 
@@ -192,6 +203,23 @@ export class Player {
 
     // --- flammables: the flame lights anything it touches ---
     if (world.touchFlammables) world.touchFlammables(this);
+
+    // --- moths: a brush steals wax and knocks Wick away ---
+    if (this.hurt > 0) this.hurt -= dt;
+    else if (world.mothHit) {
+      const m = world.mothHit(this);
+      if (m) {
+        const dir = this.cx >= m.x ? 1 : -1;
+        this.wax -= CFG.MOTH_STEAL;
+        this.hurt = CFG.MOTH_INVULN;
+        this.windVx = dir * 230;
+        this.vy = Math.min(this.vy, -380);
+        this.onGround = false;
+        this.riding = null;
+        this.flicker = 0.4;
+        Events.emit('moth', { x: m.x, y: m.y });
+      }
+    }
 
     // --- water ---
     const wet = world.wetAt ? world.wetAt(this) : false;
@@ -244,14 +272,16 @@ export class Player {
   findDripCell(world) {
     const T = CFG.TILE;
     const feet = this.feet;
-    const below = this.onGround ? Math.round(feet / T) : Math.ceil(feet / T - 0.001);
+    // riding a cart counts as mid-air: the blob drops through to whatever is below
+    const grounded = this.onGround && !this.riding;
+    const below = grounded ? Math.round(feet / T) : Math.ceil(feet / T - 0.001);
     const foot = below - 1;
     // look a little ahead on the ground so dripping near (not exactly at) a ledge still bridges
-    const ahead = this.onGround ? 12 : 2;
+    const ahead = grounded ? 12 : 2;
     const front = this.facing > 0 ? Math.floor((this.x + this.w + ahead) / T) : Math.floor((this.x - ahead) / T);
     const centerTx = Math.floor(this.cx / T);
     const tries = [];
-    if (this.onGround) {
+    if (grounded) {
       tries.push([front, below, false]);          // bridge over a gap
       tries.push([front, foot, false]);           // a step in front
       // one further only when the front cell is open (Wick overlaps it); never through a wall
@@ -265,7 +295,7 @@ export class Player {
       if (c) return c;
     }
     // blocked in front (a wall)? build under yourself and rise on it
-    if (this.onGround) {
+    if (grounded) {
       const ty = foot;
       if (world.cell(centerTx, ty) === EMPTY && !(world.blockedForBlob && world.blockedForBlob(centerTx, ty)) &&
           !rectBlocked(world, this.x, this.y - T, this.w, this.h) &&

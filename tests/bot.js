@@ -11,7 +11,7 @@ import { CFG } from '../src/config.js';
 import { createWorld } from '../src/level.js';
 import { Player } from '../src/player.js';
 import { Events } from '../src/events.js';
-import { STONE, ONEWAY, EMITTER, GATE } from '../src/physics.js';
+import { STONE, ONEWAY, EMITTER, GATE, BLOB, DOOR } from '../src/physics.js';
 
 const DT = CFG.STEP;
 const T = CFG.TILE;
@@ -115,8 +115,25 @@ function seq(progs) {
 
 const wait = (frames) => (p, w, f) => (f < frames ? inp() : null);
 
-export function programs({ drip = true, hazards = false } = {}) {
+// Puzzle moves (levels with plates): drip in front without jumping, soak the
+// nearest blob, and jump forward dripping at the top so the blob drops below.
+const dripFront = (d) => seq([face(d), (p, w, f) => (f === 0 ? inp({ dripPressed: true }) : f < 3 ? inp() : null)]);
+const soak = () => (p, w, f) => (f === 0 ? inp({ reabsorbPressed: true }) : f < 3 ? inp() : null);
+const jumpDrip = (d, at) => (p, w, f) => {
+  if (f > 0 && p.onGround && p.vy === 0 && f > 3) return null;
+  if (f > 150) return null;
+  return inp({ jumpPressed: f === 0, jumpHeld: true, moveX: d, dripPressed: f === at });
+};
+
+export function programs({ drip = true, hazards = false, puzzle = false } = {}) {
   const list = [];
+  if (puzzle && drip) {
+    list.push(['soak', soak(), 0]);
+    for (const d of [-1, 1]) {
+      list.push(['dripFront' + d, dripFront(d), 1]);
+      for (const at of [8, 14, 20]) list.push([`jumpDrip${at}:${d}`, jumpDrip(d, at), 1]);
+    }
+  }
   if (hazards) for (const n of [20, 45, 90]) list.push(['wait' + n, wait(n), 0]);
   for (const d of [-1, 1]) list.push(['walk' + d, walk(d), 0]);
   list.push(['jump0', jump(0, 9), 0], ['hop0', jump(0, 0.15), 0]);
@@ -142,13 +159,13 @@ export function programs({ drip = true, hazards = false } = {}) {
   return list;
 }
 
-const isPermanent = (k) => k === STONE || k === ONEWAY || k === EMITTER || k === GATE;
+const isPermanent = (k) => k === STONE || k === ONEWAY || k === EMITTER || k === GATE || k === DOOR;
 
-function standingOnPermanent(p, w) {
+function standingOnPermanent(p, w, blobsOk = false) {
   if (!p.onGround) return false;
   const ty = Math.round(p.feet / T);
   const tx0 = Math.floor(p.x / T), tx1 = Math.floor((p.x + p.w - 0.01) / T);
-  for (let tx = tx0; tx <= tx1; tx++) if (isPermanent(w.cell(tx, ty))) return true;
+  for (let tx = tx0; tx <= tx1; tx++) if (isPermanent(w.cell(tx, ty)) || (blobsOk && w.cell(tx, ty) === BLOB)) return true;
   return false;
 }
 
@@ -158,17 +175,23 @@ export function search(levelData, opts = {}) {
   Events.muted = true;
   const world = createWorld(levelData);
   // hazard mode only matters where something runs on a clock: wind, rain, fire
-  const timed = world.entities.some((e) => e.type === 'wind' || e.type === 'drip') || world.flammables.size > 0;
+  const timed = world.entities.some((e) => e.frames !== undefined) || world.flammables.size > 0;
   const HZ = !!opts.hazards && timed;
+  // moving platforms are geometry, not hazards: they always run, so the clock always matters
+  const CLOCKED = HZ || world.movers.length > 0;
   if (!HZ) {
     world.windAt = () => 0;
     world.wetAt = () => false;
+    world.mothHit = () => null;
   }
   const player = new Player();
   let arrivalWax = null;
   const origRefill = player.refill.bind(player);
   player.refill = (a) => { if (a === CFG.TORCH_REFILL) arrivalWax = player.wax; origRefill(a); };
-  const progs = programs({ drip: opts.drip !== false, hazards: HZ });
+  // plate levels: blobs are part of the puzzle state, so they carry between moves
+  const PUZZLE = world.plates.length > 0;
+  const CARRY = !!opts.record || PUZZLE;
+  const progs = programs({ drip: opts.drip !== false, hazards: CLOCKED, puzzle: PUZZLE });
   const nT = world.torches.length, nP = world.pumpkins.length;
 
   // fuse/gate handling: gates opened by any fuse the bot has lit stay open
@@ -208,7 +231,8 @@ export function search(levelData, opts = {}) {
 
   // with hazards the clock matters too (coarse phase bucket)
   const keyOf = (s) => `${Math.floor((s.x + CFG.BODY_W / 2) / T)},${Math.round(s.feet / T)},${s.pm},${s.tm}` +
-    (HZ ? `,${Math.floor(s.time) % 20}` : '');
+    (CLOCKED ? `,${Math.floor(s.time) % 20}` : '') +
+    (PUZZLE ? `,${(s.blobs || []).map((b) => b[0] + ':' + b[1]).sort().join(';')}` : '');
   const push = (s) => {
     const k = keyOf(s);
     const b = best.get(k);
@@ -220,7 +244,7 @@ export function search(levelData, opts = {}) {
   if (opts.startState) push({ ...opts.startState, parent: null, act: 'start', frames: null, arrivals: [] });
   else push({ x: start.x, feet: start.feet, wax: start.wax, pm: startPump, tm: startTorch, time: 0, fc: 0, parent: null, act: 'start', arrivals: [] });
 
-  const maxStates = opts.maxStates || (HZ ? 200000 : 60000);
+  const maxStates = opts.maxStates || (CLOCKED ? 200000 : 60000);
   let expanded = 0;
   let restart = false;
 
@@ -232,13 +256,13 @@ export function search(levelData, opts = {}) {
     for (const [name, prog, cost] of progs) {
       world.restore(base);
       applyOpened(HZ ? s.time : Infinity);
-      if (HZ) {
-        // hazards on the real clock; refresh their on/off state now, because the player
+      if (CLOCKED) {
+        // hazards and platforms on the real clock; refresh their on/off state now, because the player
         // reads it before the next world update would
         for (const [e, f0] of base.ent) { e.frames = f0 + s.fc; e.update(0, world); }
       }
       // blobs from earlier moves still stand (they last 14s), as in real play
-      if (opts.record) for (const [bx, by, age] of s.blobs || []) {
+      if (CARRY) for (const [bx, by, age] of s.blobs || []) {
         const b = world.addBlob(bx, by, by * T);
         if (b) { b.age = age; b.drawY = b.y; }
       }
@@ -248,6 +272,9 @@ export function search(levelData, opts = {}) {
       player.h = player.targetHeight();
       player.y = s.feet - player.h;
       player.wetTime = s.wet || 0;          // wetness carries over between moves, as in real play
+      player.hurt = s.hurt || 0;
+      player.riding = s.ride >= 0 ? world.movers[s.ride] : null;
+      world.updateDoors(player);          // plates held by carried blobs open their doors at once
       if (player.wax - cost * CFG.DRIP_COST < CFG.DRIP_MIN_LEFT && cost > 0) continue;
       arrivalWax = null;
 
@@ -281,8 +308,9 @@ export function search(levelData, opts = {}) {
       const pm = world.pumpkins.reduce((m, pk, i) => m | (pk.taken ? 1 << i : 0), 0);
       const ns = {
         x: player.x, feet: player.feet, wax: player.wax, pm, tm,
-        time: s.time + f * DT, fc: s.fc + f, wet: player.wetTime, parent: s, act: name,
-        blobs: opts.record ? world.blobs.map((b) => [b.tx, b.ty, b.age]) : null,
+        time: s.time + f * DT, fc: s.fc + f, wet: player.wetTime, hurt: player.hurt, parent: s, act: name,
+        ride: player.riding ? world.movers.indexOf(player.riding) : -1,
+        blobs: CARRY ? world.blobs.map((b) => [b.tx, b.ty, b.age]) : null,
         complete: world.complete, frames: rec ? Int8Array.from(rec) : null,
         arrivals: arrivalWax !== null ? [...s.arrivals, Math.round(arrivalWax)] : s.arrivals,
       };
@@ -295,7 +323,7 @@ export function search(levelData, opts = {}) {
         if (!goalHit || ns.wax > goalHit.wax) goalHit = ns;
         continue;
       }
-      if (!standingOnPermanent(player, world)) continue;
+      if (!standingOnPermanent(player, world, PUZZLE) && !player.riding) continue;
       push(ns);
     }
     if (restart) {
@@ -308,7 +336,8 @@ export function search(levelData, opts = {}) {
       }
       for (const st of best.values()) heapPush(queue, st);
     }
-    if (goalHit && opts.firstHit) break;
+    // clocked levels have ~20x the states: best-first by wax, so the first goal is near the best anyway
+    if (goalHit && (opts.firstHit ?? CLOCKED)) break;
   }
   Events.muted = false;
   return { goal: goalHit, expanded, sims, torchHits, world, states: best.size, best };

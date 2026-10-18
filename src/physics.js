@@ -9,8 +9,9 @@ export const BLOB = 3;
 export const COBWEB = 4;
 export const GATE = 5;
 export const EMITTER = 6;
+export const DOOR = 7;
 
-export const isFull = (k) => k === STONE || k === BLOB || k === COBWEB || k === GATE || k === EMITTER;
+export const isFull = (k) => k === STONE || k === BLOB || k === COBWEB || k === GATE || k === EMITTER || k === DOOR;
 // Anything that blocks rain or counts as support for a wax blob.
 export const isShelter = (k) => k !== EMPTY;
 
@@ -64,6 +65,17 @@ export function moveAndCollide(body, dx, dy, world) {
         const k = world.cell(tx, ty);
         if (isFull(k) || (k === ONEWAY && prevBottom <= ty * T + 0.5)) {
           body.y = ty * T - body.h; res.landed = true; break;
+        }
+      }
+      // moving platforms: one-way tops (allow for a lift that rose this frame)
+      if (world.movers && world.movers.length) {
+        for (const m of world.movers) {
+          if (body.x >= m.x + m.w || body.x + body.w <= m.x) continue;
+          if (prevBottom > m.y + 0.5 + Math.max(0, -m.dy)) continue;
+          const bottom = body.y + body.h;
+          if (bottom < m.y) continue;
+          body.y = Math.min(body.y, m.y - body.h);
+          res.landed = true; res.mover = m;
         }
       }
     } else {

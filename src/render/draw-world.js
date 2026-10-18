@@ -1,7 +1,7 @@
 // Procedural world art: sky, parallax town, tiles, props, entities, signs.
 // "Painted by torchlight": bold dark outlines, flat painterly shading.
 import { CFG, clamp, lerp } from '../config.js';
-import { STONE, ONEWAY, BLOB, COBWEB, GATE, EMITTER } from '../physics.js';
+import { STONE, ONEWAY, BLOB, COBWEB, GATE, EMITTER, DOOR } from '../physics.js';
 import { drawFlame } from './draw-wick.js';
 import { drawThemeSky, drawThemeBackdrop } from './theme-fx.js';
 
@@ -83,6 +83,10 @@ export const THEMES = {
     stone: 'slate', backwall: 'slate', snow: true, stars: true, fg: 'grass', clouds: '#26325a',
     mist: 'rgba(170,190,240,',
   },
+  works: {
+    sky: ['#140a0e', '#3a1a16', '#7a3a1e', '#c8702a'], glow: '255,170,80', haze: '#5a2a18',
+    stone: 'warm', backwall: 'brick', clouds: '#5a2a1a',
+  },
   castle: {
     sky: ['#140826', '#3e1446', '#9a2c46', '#e0623a'], glow: '255,150,90', haze: '#6a2440',
     stone: 'castle', backwall: 'castle', stars: true, clouds: '#7a2a4a',
@@ -108,6 +112,7 @@ const DECO = {
   barn: ['straw', 'straw', 'mushrooms', 'rocks'],
   cold: ['snow', 'snow', 'icerock', 'rocks'],
   castle: ['rubble', 'tuft', 'rubble', 'mushrooms'],
+  works: ['rubble', 'straw', 'rocks', 'rubble'],
 };
 
 const STONES = {
@@ -681,7 +686,7 @@ export function drawTiles(ctx, cam, world, lights) {
   for (let ty = y0; ty <= y1; ty++) {
     for (let tx = x0; tx <= x1; tx++) {
       const k = world.cell(tx, ty);
-      if (k === 0 || k === BLOB || k === COBWEB) continue;
+      if (k === 0 || k === BLOB || k === COBWEB || k === DOOR) continue;
       if (world.isDark(tx, ty) && !lit(tx, ty)) continue;
       const px = tx * T, py = ty * T;
       const v = ((tx * 7 + ty * 13) & 3);

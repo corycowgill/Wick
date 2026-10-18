@@ -50,7 +50,7 @@ for (let i = 0; i < LEVELS.length; i++) {
 
 section('Wax management required (no-drip bot must fail)');
 {
-  for (const name of ['Drip Step', 'Bell Tower', 'Ember Fair']) {
+  for (const name of ['Market Row', 'Bell Tower', 'Ember Fair']) {
     const L = LEVELS.find((l) => l.name === name);
     const r = search(L, { drip: false });
     check(!r.goal, `${name} cannot be finished without dripping wax`);
@@ -196,6 +196,67 @@ section('Wax drip behaves the way a player expects');
     check(w.blobs.length === 0 && p.wax > wax + 3, 'soak takes the nearby blob back for half its wax');
   }
   Events.clear();
+}
+
+// ------------------------------------------------------------ dynamic
+section('Moving platforms and moths');
+{
+  const T = CFG.TILE;
+  const blank = { moveX: 0, jumpHeld: false, jumpPressed: false, dripPressed: false, reabsorbPressed: false };
+  const run = (w, p, frames, i = {}) => {
+    for (let f = 0; f < frames; f++) { p.update(CFG.STEP, { ...blank, ...i }, w); w.update(CFG.STEP, p); }
+  };
+  //        0123456789012345
+  const pit = [
+    '................',
+    '................',
+    '................',
+    '..S..........G..',
+    '###.........####',
+    '................',
+    '................',
+  ];
+  Events.muted = true;
+  {
+    const w = createWorld({ name: 't', tiles: pit, entities: [{ type: 'mover', x: 3, y: 4, w: 3, to: [9, 4], period: 4, phase: 0 }] });
+    const p = new Player();
+    p.spawn(4.5 * T, 4 * T, 100);
+    run(w, p, 120);
+    check(p.alive && p.onGround && p.riding === w.movers[0] && Math.abs(p.feet - 4 * T) < 0.01 && p.cx > 9 * T,
+      'a ferry carries Wick across the pit, standing the whole way');
+  }
+  {
+    const w = createWorld({ name: 't', tiles: pit, entities: [{ type: 'mover', x: 3, y: 4, w: 3, to: [3, 1], period: 4, phase: 0 }] });
+    const p = new Player();
+    p.spawn(4.5 * T, 4 * T, 100);
+    run(w, p, 120);
+    check(p.alive && p.onGround && Math.abs(p.feet - 1 * T) < 1, 'a lift raises Wick to its top stop');
+    run(w, p, 120);
+    check(p.alive && p.onGround && Math.abs(p.feet - 4 * T) < 1, 'and brings them back down without falling through');
+  }
+  {
+    const w = createWorld({ name: 't', tiles: pit, entities: [{ type: 'mover', x: 3, y: 4, w: 3, to: [9, 4], period: 4, phase: 0 }] });
+    const p = new Player();
+    p.spawn(1.5 * T, 4 * T, 100);
+    run(w, p, 1, { jumpPressed: true, jumpHeld: true });
+    run(w, p, 50, { moveX: 1, jumpHeld: true });
+    check(p.alive && p.onGround && p.riding, 'jumping onto a moving cart from above lands on it');
+  }
+  {
+    const flat = pit.map((r, y) => (y === 4 ? '################' : r));
+    const w = createWorld({ name: 't', tiles: flat, entities: [{ type: 'moth', x: 6, y: 3, to: [6, 3], period: 4, phase: 0 }] });
+    const p = new Player();
+    p.spawn(3.5 * T, 4 * T, 100);
+    const wax0 = p.wax;
+    let hits = 0;
+    Events.muted = false;
+    Events.on('moth', () => hits++);
+    run(w, p, 50, { moveX: 1 });
+    Events.clear();
+    Events.muted = true;
+    check(hits === 1 && p.wax < wax0 - CFG.MOTH_STEAL + 1 && p.alive, `a moth brush steals ${CFG.MOTH_STEAL} wax once (then a moment of safety)`);
+  }
+  Events.muted = false;
 }
 
 // ------------------------------------------------------------ input

@@ -2,6 +2,7 @@
 import { CFG, clamp, lerp } from './config.js';
 import { drawFlame, drawWick } from './render/draw-wick.js';
 import { drawBackground } from './render/draw-world.js';
+import { BUILD, BUILD_DATE } from './version.js';
 
 const W = CFG.VIEW_W, H = CFG.VIEW_H;
 const SERIF = 'Georgia, "Times New Roman", serif';
@@ -180,6 +181,11 @@ export const UI = {
         ? 'Ⓐ jump   Ⓧ drip wax   Ⓑ soak blob   Ⓨ restart   Menu pause'
         : '←→ move   Space jump   ↓ drip wax   E soak blob   R restart   Esc pause   M mute';
     ctx.fillText(help, W / 2, H - 18);
+    ctx.font = `11px ${SANS}`;
+    ctx.textAlign = 'right';
+    ctx.fillStyle = 'rgba(251,233,200,0.45)';
+    ctx.fillText(`build ${BUILD} · ${BUILD_DATE}`, W - 12, H - 18);
+    ctx.textAlign = 'center';
   },
 
   // ---------------------------------------------------------------- end
