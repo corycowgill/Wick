@@ -542,7 +542,7 @@ export function drawBackground(ctx, cam, world, time) {
   });
   drawThemeBackdrop(ctx, cam, world, time, th, lift);
   drawTrees(ctx, cam, world);
-  if (th.bunting && !world.data.finale) drawBunting(ctx, cam, time, lift);
+  if (th.bunting && !world.data.finale && world.data.scene !== 'scorch') drawBunting(ctx, cam, time, lift);
   if (th.rain) drawRainStreaks(ctx, time, 0.18, 70, 1);
 }
 

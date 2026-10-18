@@ -5,6 +5,7 @@ export default {
   name: "Night Ferries",
   hint: "Ride the ferries home.",
   theme: "canal",
+  scene: "harbour",
   ambient: 0.9,
   dark: [[89,105]],
   tiles: [

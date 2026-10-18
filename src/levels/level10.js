@@ -5,6 +5,7 @@ export default {
   name: "Firebreak",
   hint: "Light the right fuse.",
   theme: "harvest",
+  scene: "scorch",
   ambient: 0.88,
   tiles: [
     '....................##.....................................................#................................................',

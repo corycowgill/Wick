@@ -52,6 +52,8 @@ export const CREDITS = [
   ['q', '"Add a credits scene that is funny about how AI made it"'],
   ['q', '"Add more levels that mix different mechanics together"'],
   ['t', '(the moths now work at the mill. They were not consulted.)'],
+  ['q', '"Add more style and personality"'],
+  ['t', '(Wick now naps if you stop playing. This is not a bug.)'],
   ['g'], ['g'],
   ['h', 'By the numbers'],
   ['t', 'Lines of code written by a human: 0'],

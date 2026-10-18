@@ -119,7 +119,7 @@ function write(n, meta, g) {
   g.sign(104, 9, 'This lift stops short. Jump the rest.');
   define('lifts', {
     name: 'Harvest Lifts', hint: 'Ride the carts and lifts.',
-    extra: { theme: 'harvest', ambient: 0.86, dark: [[61, 12, 90, 21]] },
+    extra: { theme: 'harvest', scene: 'hoist', ambient: 0.86, dark: [[61, 12, 90, 21]] },
   }, g);
 }
 
@@ -194,7 +194,7 @@ function write(n, meta, g) {
   g.ground(124, 149, 15).put(142, 14, 'G').put(130, 14, 'l').put(136, 14, 'n');
   define('ferries', {
     name: 'Night Ferries', hint: 'Ride the ferries home.',
-    extra: { theme: 'canal', ambient: 0.9, dark: [[89, 105]] },
+    extra: { theme: 'canal', scene: 'harbour', ambient: 0.9, dark: [[89, 105]] },
   }, g);
 }
 
@@ -585,7 +585,7 @@ function write(n, meta, g) {
   g.sign(80, 18, 'Fire did the work.');
   define('firebreak', {
     name: 'Firebreak', hint: 'Light the right fuse.',
-    extra: { theme: 'harvest', ambient: 0.88 },
+    extra: { theme: 'harvest', scene: 'scorch', ambient: 0.88 },
   }, g);
 }
 
@@ -620,7 +620,7 @@ function write(n, meta, g) {
   g.put(100, 10, 'G').put(92, 10, 'n');
   define('clockwork', {
     name: 'Clockwork Yard', hint: 'Plates, carts and moths.',
-    extra: { theme: 'tower', ambient: 0.9 },
+    extra: { theme: 'tower', scene: 'gears', ambient: 0.9 },
   }, g);
 }
 
@@ -655,7 +655,7 @@ function write(n, meta, g) {
   g.put(84, 10, 'P').put(92, 10, 'n').put(104, 10, 'G');
   define('stormmill', {
     name: 'Storm Mill', hint: 'Rain, plates and a lift.',
-    extra: { theme: 'rain', ambient: 0.9, dark: [[23, 12, 39, 17]] },
+    extra: { theme: 'rain', scene: 'waterwheel', ambient: 0.9, dark: [[23, 12, 39, 17]] },
   }, g);
 }
 
@@ -702,7 +702,7 @@ function write(n, meta, g) {
   );
   define('galelocks', {
     name: 'Gale Locks', hint: 'Wind, plates and fire.',
-    extra: { theme: 'wind', ambient: 0.84, wind: { gust: 1.5, calm: 3.0 } },
+    extra: { theme: 'wind', scene: 'locks', ambient: 0.84, wind: { gust: 1.5, calm: 3.0 } },
   }, g);
 }
 
@@ -736,7 +736,7 @@ function write(n, meta, g) {
   g.ground(94, W - 1, 18).put(99, 17, 'h').put(102, 17, 'n').put(108, 17, 'G');
   define('mothmill', {
     name: 'Moth Mill', hint: 'Moths, plates and carts.',
-    extra: { theme: 'violet', ambient: 0.88, dark: [[70, 0, 95, 21]] },
+    extra: { theme: 'violet', scene: 'mothmoon', ambient: 0.88, dark: [[70, 0, 95, 21]] },
   }, g);
 }
 

@@ -5,6 +5,7 @@ export default {
   name: "Clockwork Yard",
   hint: "Plates, carts and moths.",
   theme: "tower",
+  scene: "gears",
   ambient: 0.9,
   tiles: [
     '..........................#...................................#.....................#.........................',

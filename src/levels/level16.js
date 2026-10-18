@@ -5,6 +5,7 @@ export default {
   name: "Moth Mill",
   hint: "Moths, plates and carts.",
   theme: "violet",
+  scene: "mothmoon",
   ambient: 0.88,
   dark: [[70,0,95,21]],
   tiles: [

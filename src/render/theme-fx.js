@@ -3,9 +3,11 @@
 // darkness layer; their lights are queued and drawn additively after it, so
 // bulbs, flames and windows glow through the dark the way real lights would.
 import { CFG, clamp } from '../config.js';
+import { EMITTER } from '../physics.js';
 
 const W = CFG.VIEW_W, H = CFG.VIEW_H, T = CFG.TILE;
 let glows = [];            // [x, y, r, 'r,g,b', a] in screen space, drawn after the darkness
+let beams = [];            // [x, y, turn] lighthouse beams, drawn after the darkness too
 let skyCam = null, skyLift = 0;   // remembered for effects drawn later in the frame
 const fx = new WeakMap();  // per-world timers (lightning, fireworks, chimes)
 
@@ -19,7 +21,7 @@ const glow = (x, y, r, rgb, a) => glows.push(x, y, r, rgb, a);
 
 // ------------------------------------------------------------ sky extras (behind the castle)
 export function drawThemeSky(ctx, cam, world, time, th, lift) {
-  glows = [];
+  glows = []; beams = [];
   skyCam = cam; skyLift = lift;
   if (th.name === 'rain') drawLightningSky(ctx, cam, world, time);
   if (th.name === 'fair') drawFireworksSky(ctx, world, time);
@@ -96,6 +98,8 @@ function drawFireworksSky(ctx, world, time) {
 
 // ------------------------------------------------------------ backdrop set pieces (after the rooftops)
 export function drawThemeBackdrop(ctx, cam, world, time, th, lift) {
+  const scene = SCENES[world.data && world.data.scene];
+  if (scene) return scene(ctx, cam, world, time, lift);
   switch (th.name) {
     case 'dusk': return drawStalls(ctx, cam, time, lift);
     case 'harvest': return drawCornfield(ctx, cam, time, lift);
@@ -222,6 +226,11 @@ function drawGiantCandles(ctx, cam, time, lift) {
     const fl = 1 + Math.sin(time * 9 + i) * 0.08 + Math.sin(time * 23 + i * 3) * 0.05;
     glow(x + w / 2, top - 22, 60 * fl, '255,170,80', 0.22);
     glow(x + w / 2, top - 20, 13 * fl, '255,230,170', 0.75);
+    // moths drawn to the great flames
+    for (let k = 0; k < 3; k++) {
+      const a = time * (1.4 + k * 0.35) + i * 2 + k * 2.1, rr = 26 + k * 10;
+      drawMothShape(ctx, x + w / 2 + Math.cos(a) * rr, top - 22 + Math.sin(a * 1.4) * rr * 0.55, 3.2, time * 24 + k, '#2a1440');
+    }
   }
 }
 
@@ -288,11 +297,366 @@ function drawFerrisWheel(ctx, cam, time, lift) {
   glow(x, y, 8, '255,220,150', 0.6);
 }
 
+// ------------------------------------------------------------ per-level scenes
+// Levels that share a theme each get their own set piece (level data `scene`),
+// so a second harvest or canal level does not look like a rerun of the first.
+const SCENES = {
+  hoist: drawHoist, scorch: drawScorch, harbour: drawHarbour, gears: drawGears,
+  waterwheel: drawWaterwheel, locks: drawLocks, mothmoon: drawMothMoon,
+};
+
+// Harvest Lifts: grain silos with a hoist wheel hauling a bale up and down
+function drawHoist(ctx, cam, world, time, lift) {
+  drawCornfield(ctx, cam, time, lift);
+  const f = 0.3, span = 760, base = H - 20 + lift * f, off = cam.x * f;
+  for (let i = Math.floor(off / span) - 1; i < Math.floor(off / span) + 3; i++) {
+    const x = i * span - off + 520;
+    for (const [sx, sw, sh] of [[x, 70, 200], [x + 78, 56, 160]]) {
+      ctx.fillStyle = '#2a1232';
+      ctx.fillRect(sx, base - sh, sw, sh);
+      ctx.beginPath(); ctx.ellipse(sx + sw / 2, base - sh, sw / 2, 18, 0, Math.PI, 0); ctx.fill();
+      ctx.fillStyle = 'rgba(255,190,120,0.07)';
+      for (let k = 1; k < 5; k++) ctx.fillRect(sx, base - sh + (k * sh) / 5, sw, 2);
+    }
+    // the hoist: a gantry arm, a turning wheel and a bale on its rope
+    const gx = x + 35, gy = base - 228, wx = gx + 62, wy = gy - 26;
+    const haul = Math.sin(time * 0.7 + i) * 0.5 + 0.5;
+    ctx.fillStyle = '#2a1232';
+    ctx.fillRect(gx - 3, gy - 30, 6, 30); ctx.fillRect(gx - 3, gy - 30, 70, 5);
+    ctx.save(); ctx.translate(wx, wy); ctx.rotate(-haul * 9);
+    ctx.strokeStyle = '#2a1232'; ctx.lineWidth = 3;
+    ctx.beginPath(); ctx.arc(0, 0, 11, 0, 6.283); ctx.stroke();
+    for (let k = 0; k < 4; k++) { ctx.rotate(Math.PI / 4); ctx.beginPath(); ctx.moveTo(-11, 0); ctx.lineTo(11, 0); ctx.stroke(); }
+    ctx.restore();
+    const ry = wy + 50 + haul * 130;
+    ctx.strokeStyle = '#2a1232'; ctx.lineWidth = 1.5;
+    ctx.beginPath(); ctx.moveTo(wx + 11, wy); ctx.lineTo(wx + 11, ry); ctx.stroke();
+    ctx.fillStyle = '#3a1c30'; ctx.fillRect(wx + 1, ry, 22, 16);
+    ctx.fillStyle = 'rgba(255,200,110,0.14)'; ctx.fillRect(wx + 1, ry + 5, 22, 2); ctx.fillRect(wx + 1, ry + 10, 22, 2);
+    glow(x + 35, base - 150, 5, '255,190,100', 0.6);
+    glow(x + 106, base - 110, 4, '255,190,100', 0.5);
+  }
+}
+
+// Firebreak: a burnt field, a brush fire along the horizon and smoke columns
+function drawScorch(ctx, cam, world, time, lift) {
+  const hy = H - 250 + lift * 0.2;
+  const fl = 0.8 + 0.2 * Math.sin(time * 3.1) * Math.sin(time * 1.3);
+  const g = ctx.createLinearGradient(0, hy - 80, 0, hy + 30);
+  g.addColorStop(0, 'rgba(255,110,40,0)');
+  g.addColorStop(0.7, `rgba(255,110,40,${0.32 * fl})`);
+  g.addColorStop(1, 'rgba(255,160,70,0.45)');
+  ctx.fillStyle = g; ctx.fillRect(0, hy - 80, W, 110);
+  for (let k = 0; k < 34; k++) {
+    const x = wrap(k * 67 - cam.x * 0.1, W + 80) - 40;
+    const h = 8 + (Math.sin(time * 5 + k * 1.7) * 0.5 + 0.5) * 18;
+    ctx.fillStyle = 'rgba(255,150,60,0.55)';
+    ctx.beginPath(); ctx.moveTo(x - 7, hy + 4); ctx.quadraticCurveTo(x - 2, hy - h * 0.6, x + Math.sin(time * 7 + k) * 3, hy - h); ctx.quadraticCurveTo(x + 2, hy - h * 0.6, x + 7, hy + 4); ctx.fill();
+    if (k % 3 === 0) glow(x, hy - 4, 40, '255,130,50', 0.12 * fl);
+  }
+  // smoke columns leaning with the breeze
+  const sf = 0.15, sspan = 520, soff = cam.x * sf;
+  for (let i = Math.floor(soff / sspan) - 1; i < Math.floor(soff / sspan) + 3; i++) {
+    const x = i * sspan - soff + 200;
+    for (let k = 0; k < 8; k++) {
+      const ph = (time * 0.04 + k / 8 + Math.abs(i) * 0.37) % 1;
+      ctx.fillStyle = `rgba(40,18,30,${0.3 * (1 - ph)})`;
+      ctx.beginPath(); ctx.arc(x + ph * 90 + Math.sin(time * 0.5 + k) * 10, hy - ph * 320, 18 + ph * 46, 0, 6.283); ctx.fill();
+    }
+  }
+  // charred stubble and dead trees, with embers still glowing on the tips
+  const f = 0.5, base = H - 120 + lift * f, off = cam.x * f;
+  ctx.strokeStyle = '#1a0a16'; ctx.lineWidth = 3; ctx.lineCap = 'round';
+  ctx.beginPath();
+  for (let x = -wrap(off, 18) - 18; x < W + 18; x += 18) {
+    const i = Math.round((x + off) / 18), h = 18 + (Math.abs(i * 53) % 26);
+    ctx.moveTo(x, base); ctx.lineTo(x + ((i % 3) - 1) * 3, base - h);
+  }
+  ctx.stroke();
+  for (let x = -wrap(off, 18) - 18; x < W + 18; x += 18) {
+    const i = Math.round((x + off) / 18);
+    const tw = Math.sin(time * 1.7 + i * 2.3);
+    if (tw > 0.8) glow(x + ((i % 3) - 1) * 3, base - 18 - (Math.abs(i * 53) % 26), 6, '255,120,40', (tw - 0.8) * 3);
+  }
+  const span = 560;
+  ctx.fillStyle = '#1a0a16'; ctx.lineWidth = 4;
+  for (let i = Math.floor(off / span) - 1; i < Math.floor(off / span) + 3; i++) {
+    const x = i * span - off + 140;
+    ctx.fillRect(x - 4, base - 120, 8, 120);
+    ctx.beginPath();
+    ctx.moveTo(x, base - 80); ctx.lineTo(x - 34, base - 118); ctx.moveTo(x, base - 100); ctx.lineTo(x + 30, base - 140);
+    ctx.moveTo(x - 20, base - 100); ctx.lineTo(x - 26, base - 132); ctx.moveTo(x + 16, base - 116); ctx.lineTo(x + 34, base - 118);
+    ctx.stroke();
+  }
+}
+
+// Night Ferries: a lighthouse sweeping its beam, moored boats with mast lanterns
+function drawHarbour(ctx, cam, world, time, lift) {
+  const lx = wrap(760 - cam.x * 0.12, W + 300) - 150, base = H - 150 + lift * 0.12, top = base - 190;
+  ctx.fillStyle = '#1e2a50';
+  ctx.beginPath(); ctx.moveTo(lx - 22, base); ctx.lineTo(lx - 13, top); ctx.lineTo(lx + 13, top); ctx.lineTo(lx + 22, base); ctx.fill();
+  ctx.fillStyle = 'rgba(200,80,80,0.35)';
+  for (let k = 0; k < 3; k++) {
+    const y0 = top + 30 + k * 50, w0 = 13 + (9 * (y0 - top)) / 190, w1 = 13 + (9 * (y0 + 20 - top)) / 190;
+    ctx.beginPath(); ctx.moveTo(lx - w0, y0); ctx.lineTo(lx + w0, y0); ctx.lineTo(lx + w1, y0 + 20); ctx.lineTo(lx - w1, y0 + 20); ctx.fill();
+  }
+  ctx.fillStyle = '#1e2a50';
+  ctx.fillRect(lx - 18, top - 4, 36, 6); ctx.fillRect(lx - 10, top - 26, 20, 22);
+  ctx.beginPath(); ctx.moveTo(lx - 14, top - 26); ctx.lineTo(lx, top - 42); ctx.lineTo(lx + 14, top - 26); ctx.fill();
+  ctx.fillStyle = '#ffe6a8'; ctx.fillRect(lx - 6, top - 22, 12, 14);
+  glow(lx, top - 15, 34, '255,230,170', 0.7);
+  beams.push(lx, top - 15, time * 0.8);
+  ctx.fillStyle = '#18213e';
+  ctx.beginPath(); ctx.ellipse(lx, base + 4, 70, 14, 0, 0, 6.283); ctx.fill();
+  // moored boats bobbing
+  const f = 0.4, span = 360, bb = H - 110 + lift * f, off = cam.x * f;
+  for (let i = Math.floor(off / span) - 1; i < Math.floor(off / span) + 4; i++) {
+    const x = i * span - off + 90, bob = Math.sin(time * 1.4 + i * 2) * 3, tilt = Math.sin(time * 1.1 + i) * 0.05;
+    ctx.save(); ctx.translate(x, bb + bob); ctx.rotate(tilt);
+    ctx.fillStyle = '#20284a';
+    ctx.beginPath(); ctx.moveTo(-50, -14); ctx.lineTo(50, -14); ctx.quadraticCurveTo(44, 6, 30, 8); ctx.lineTo(-34, 8); ctx.quadraticCurveTo(-48, 4, -50, -14); ctx.fill();
+    ctx.fillRect(-14, -30, 26, 16);
+    ctx.fillRect(-2, -96, 3, 82);
+    ctx.strokeStyle = '#20284a'; ctx.lineWidth = 1.2;
+    ctx.beginPath(); ctx.moveTo(0, -96); ctx.lineTo(-48, -14); ctx.moveTo(0, -96); ctx.lineTo(48, -14); ctx.stroke();
+    ctx.fillStyle = '#ffd890'; ctx.fillRect(-8, -26, 5, 5); ctx.fillRect(3, -26, 5, 5);
+    ctx.restore();
+    const sw = Math.sin(time * 1.8 + i) * 4;
+    glow(x + sw, bb + bob - 70, 14, '255,200,120', 0.55);
+    glow(x, bb + bob - 23, 22, '255,190,110', 0.25);
+    ctx.strokeStyle = 'rgba(255,200,120,0.18)'; ctx.lineWidth = 2;
+    for (let k = 0; k < 3; k++) { const ry = bb + 16 + k * 6; ctx.beginPath(); ctx.moveTo(x - 10 + Math.sin(time * 2 + k) * 4, ry); ctx.lineTo(x + 10 + Math.sin(time * 2.6 + k) * 4, ry); ctx.stroke(); }
+  }
+}
+
+// a toothed gear; `a` is its turn
+function gear(ctx, x, y, r, n, a, col, tooth = 9) {
+  const s = 6.283 / n;
+  ctx.fillStyle = col;
+  ctx.beginPath();
+  for (let j = 0; j < n; j++) {
+    const t0 = a + j * s;
+    ctx.lineTo(x + Math.cos(t0) * r, y + Math.sin(t0) * r);
+    ctx.lineTo(x + Math.cos(t0 + s * 0.15) * (r + tooth), y + Math.sin(t0 + s * 0.15) * (r + tooth));
+    ctx.lineTo(x + Math.cos(t0 + s * 0.45) * (r + tooth), y + Math.sin(t0 + s * 0.45) * (r + tooth));
+    ctx.lineTo(x + Math.cos(t0 + s * 0.6) * r, y + Math.sin(t0 + s * 0.6) * r);
+  }
+  ctx.closePath(); ctx.fill();
+  ctx.strokeStyle = 'rgba(255,220,190,0.09)'; ctx.lineWidth = 3;
+  ctx.beginPath(); ctx.arc(x, y, r * 0.72, 0, 6.283); ctx.stroke();
+  ctx.beginPath();
+  for (let k = 0; k < 5; k++) { const sa = a + (k / 5) * 6.283; ctx.moveTo(x + Math.cos(sa) * r * 0.2, y + Math.sin(sa) * r * 0.2); ctx.lineTo(x + Math.cos(sa) * r * 0.7, y + Math.sin(sa) * r * 0.7); }
+  ctx.stroke();
+  ctx.fillStyle = 'rgba(255,220,190,0.12)';
+  ctx.beginPath(); ctx.arc(x, y, r * 0.16, 0, 6.283); ctx.fill();
+}
+
+// Clockwork Yard: a great clock face with a pendulum, and meshing gears
+function drawGears(ctx, cam, world, time, lift) {
+  const cx = wrap(W * 0.62 - cam.x * 0.08, W + 300) - 150, cy = 140 + lift * 0.04, r = 72;
+  ctx.fillStyle = '#26204e';
+  ctx.beginPath(); ctx.arc(cx, cy, r + 10, 0, 6.283); ctx.fill();
+  ctx.fillStyle = '#3a3270';
+  ctx.beginPath(); ctx.arc(cx, cy, r, 0, 6.283); ctx.fill();
+  for (let k = 0; k < 12; k++) {
+    const a = (k / 12) * 6.283;
+    glow(cx + Math.cos(a) * (r - 10), cy + Math.sin(a) * (r - 10), 5, '255,220,160', 0.45);
+  }
+  glow(cx, cy, r, '255,220,160', 0.08);
+  ctx.strokeStyle = '#1a1438'; ctx.lineCap = 'round';
+  const hand = (a, len, wdt) => { ctx.lineWidth = wdt; ctx.beginPath(); ctx.moveTo(cx, cy); ctx.lineTo(cx + Math.sin(a) * len, cy - Math.cos(a) * len); ctx.stroke(); };
+  hand(time * 0.02 + 1.3, r * 0.5, 5);
+  hand(Math.floor(time) * 0.105, r * 0.78, 3);       // the minute hand ticks
+  const sw = Math.sin(time * 2.2) * 0.32;
+  ctx.lineWidth = 3;
+  ctx.beginPath(); ctx.moveTo(cx, cy + r + 10); ctx.lineTo(cx + Math.sin(sw) * 110, cy + r + 10 + Math.cos(sw) * 110); ctx.stroke();
+  ctx.fillStyle = '#1a1438';
+  ctx.beginPath(); ctx.arc(cx + Math.sin(sw) * 110, cy + r + 10 + Math.cos(sw) * 110, 13, 0, 6.283); ctx.fill();
+  const f = 0.22, span = 620, base = H + 20 + lift * f, off = cam.x * f;
+  for (let i = Math.floor(off / span) - 1; i < Math.floor(off / span) + 3; i++) {
+    const x = i * span - off + 300, y = base - 200, w = 0.22 * (i % 2 ? 1 : -1);
+    gear(ctx, x, y, 90, 16, time * w, '#1e1a44');
+    gear(ctx, x + 120, y + 88, 50, 9, -time * w * 16 / 9 + 0.2, '#221d4a');
+    gear(ctx, x - 100, y + 96, 40, 7, -time * w * 16 / 7, '#221d4a');
+  }
+}
+
+// Storm Mill: the mill's waterwheel turning under a spilling flume
+function drawWaterwheel(ctx, cam, world, time, lift) {
+  const f = 0.3, span = 720, base = H - 40 + lift * f, off = cam.x * f;
+  for (let i = Math.floor(off / span) - 1; i < Math.floor(off / span) + 3; i++) {
+    const x = i * span - off + 380, wy = base - 84, r = 78;
+    ctx.fillStyle = '#161c3a';
+    ctx.fillRect(x + 20, base - 170, 160, 170);
+    ctx.beginPath(); ctx.moveTo(x + 8, base - 168); ctx.lineTo(x + 100, base - 236); ctx.lineTo(x + 192, base - 168); ctx.fill();
+    ctx.fillStyle = '#ffd890'; ctx.fillRect(x + 120, base - 130, 16, 20); ctx.fillRect(x + 60, base - 70, 14, 18);
+    glow(x + 128, base - 120, 26, '255,200,120', 0.35); glow(x + 67, base - 61, 22, '255,200,120', 0.3);
+    // the flume and the water spilling onto the wheel
+    ctx.fillStyle = '#161c3a';
+    ctx.fillRect(x - 230, wy - r - 14, 220, 10);
+    ctx.fillRect(x - 200, wy - r - 4, 6, 120); ctx.fillRect(x - 120, wy - r - 4, 6, 110);
+    ctx.strokeStyle = 'rgba(170,200,240,0.45)'; ctx.lineWidth = 2;
+    for (let k = 0; k < 6; k++) {
+      const ph = (time * 2.4 + k / 6) % 1;
+      ctx.beginPath(); ctx.moveTo(x - 12 + k * 2, wy - r - 4 + ph * 30); ctx.lineTo(x - 10 + k * 2, wy - r + 6 + ph * 30); ctx.stroke();
+    }
+    ctx.save(); ctx.translate(x, wy); ctx.rotate(time * 0.6);
+    ctx.strokeStyle = '#161c3a'; ctx.lineWidth = 6;
+    ctx.beginPath(); ctx.arc(0, 0, r, 0, 6.283); ctx.stroke();
+    ctx.lineWidth = 3; ctx.beginPath(); ctx.arc(0, 0, r * 0.62, 0, 6.283); ctx.stroke();
+    ctx.beginPath();
+    for (let k = 0; k < 8; k++) { const a = (k / 8) * 6.283; ctx.moveTo(0, 0); ctx.lineTo(Math.cos(a) * r, Math.sin(a) * r); }
+    ctx.stroke();
+    ctx.fillStyle = '#161c3a';
+    for (let k = 0; k < 16; k++) { ctx.rotate(6.283 / 16); ctx.fillRect(r - 4, -4, 16, 8); }
+    ctx.restore();
+    // churned water at the bottom
+    ctx.strokeStyle = 'rgba(190,215,250,0.35)'; ctx.lineWidth = 2;
+    for (let k = 0; k < 5; k++) {
+      const ph = (time * 1.5 + k / 5) % 1;
+      ctx.beginPath(); ctx.arc(x - 30 + k * 16, wy + r + 6, 4 + ph * 10, Math.PI, 0); ctx.stroke();
+    }
+  }
+}
+
+// Gale Locks: canal lock gates and pennants that stream out when a gust blows
+function drawLocks(ctx, cam, world, time, lift) {
+  drawWindmills(ctx, cam, time, lift);
+  let gust = 0, dir = -1;
+  for (const z of world.windZones ? world.windZones() : []) {
+    if (z.rect.x > cam.x + cam.w || z.rect.x + z.rect.w < cam.x) continue;
+    if (z.strength > gust) { gust = z.strength; dir = z.dir; }
+  }
+  const f = 0.45, span = 440, base = H - 60 + lift * f, off = cam.x * f;
+  for (let i = Math.floor(off / span) - 1; i < Math.floor(off / span) + 4; i++) {
+    const x = i * span - off + 120;
+    // a lock gate: two posts, the gate leaf and its long balance beam
+    ctx.fillStyle = '#2a1640';
+    ctx.fillRect(x, base - 90, 12, 90); ctx.fillRect(x + 84, base - 90, 12, 90);
+    ctx.fillRect(x + 12, base - 76, 72, 60);
+    ctx.fillStyle = 'rgba(255,200,170,0.08)';
+    for (let k = 0; k < 4; k++) ctx.fillRect(x + 12, base - 70 + k * 14, 72, 3);
+    ctx.save(); ctx.translate(x + 90, base - 84); ctx.rotate(-0.08);
+    ctx.fillStyle = '#2a1640'; ctx.fillRect(0, -5, 110, 10);
+    ctx.restore();
+    ctx.fillStyle = 'rgba(200,170,220,0.25)';
+    ctx.fillRect(x - 40, base - 8, 180, 3);
+    // the pennant: droops in the calm, streams out with the gust
+    const px = x + 220, py = base - 150;
+    ctx.fillStyle = '#2a1640'; ctx.fillRect(px - 2, py, 4, 150);
+    const len = 30 + gust * 26, droop = 1.25 * (1 - gust), seg = 6;
+    const pt = (u, edge) => {
+      const wv = Math.sin(time * (4 + gust * 10) - u * 5 + i) * (2 + gust * 4) * u;
+      const a = droop * u, w0 = (1 - u) * 14 + 2;
+      return [px + Math.cos(a) * dir * len * u - Math.sin(a) * dir * w0 * edge, py + 2 + Math.sin(a) * len * u + Math.cos(a) * w0 * edge + wv];
+    };
+    ctx.fillStyle = i % 2 ? '#c8463a' : '#e8b040';
+    ctx.beginPath();
+    for (let k = 0; k <= seg; k++) ctx.lineTo(...pt(k / seg, 0));
+    for (let k = seg; k >= 0; k--) ctx.lineTo(...pt(k / seg, 1));
+    ctx.closePath(); ctx.fill();
+  }
+}
+
+// Moth Mill: a low moon, and the mill's great lantern with moths circling it
+function drawMothMoon(ctx, cam, world, time, lift) {
+  const mx = wrap(W * 0.66 - cam.x * 0.05, W + 400) - 200, my = 150 + lift * 0.03;
+  ctx.fillStyle = '#f2e2f2';
+  ctx.beginPath(); ctx.arc(mx, my, 64, 0, 6.283); ctx.fill();
+  ctx.fillStyle = 'rgba(190,160,200,0.4)';
+  ctx.beginPath(); ctx.arc(mx - 18, my - 10, 11, 0, 6.283); ctx.arc(mx + 20, my + 16, 8, 0, 6.283); ctx.arc(mx + 8, my - 24, 5, 0, 6.283); ctx.fill();
+  glow(mx, my, 200, '230,200,255', 0.1);
+  for (let k = 0; k < 3; k++) {
+    const u = wrap(time * 0.05 + k * 0.33, 1);
+    drawMothShape(ctx, mx - 150 + u * 300, my - 30 + Math.sin(u * 9 + k) * 30 + k * 18, 5, time * 18 + k, '#2a1440');
+  }
+  const f = 0.3, span = 680, base = H - 30 + lift * f, off = cam.x * f;
+  for (let i = Math.floor(off / span) - 1; i < Math.floor(off / span) + 3; i++) {
+    const x = i * span - off + 300;
+    ctx.fillStyle = '#24123a';
+    ctx.fillRect(x, base - 120, 150, 120);
+    ctx.beginPath(); ctx.moveTo(x - 10, base - 118); ctx.lineTo(x + 75, base - 176); ctx.lineTo(x + 160, base - 118); ctx.fill();
+    ctx.fillRect(x + 110, base - 230, 26, 120);
+    ctx.fillRect(x + 104, base - 238, 38, 8);
+    const lx = x + 123, ly = base - 252;
+    ctx.fillRect(lx - 10, ly - 12, 20, 4);
+    ctx.fillStyle = '#ffd48a'; ctx.fillRect(lx - 7, ly - 8, 14, 16);
+    const fl = 1 + Math.sin(time * 9 + i) * 0.06;
+    glow(lx, ly, 70 * fl, '255,190,110', 0.25);
+    glow(lx, ly, 14 * fl, '255,235,180', 0.8);
+    glow(x + 40, base - 70, 18, '255,200,120', 0.35);
+    for (let k = 0; k < 6; k++) {
+      const a = time * (1.2 + (k % 3) * 0.3) + k * 1.05, rr = 22 + (k % 3) * 9;
+      drawMothShape(ctx, lx + Math.cos(a) * rr, ly + Math.sin(a * 1.3) * rr * 0.6, 4.6, time * 22 + k, '#24123a');
+    }
+  }
+}
+
+// a moth silhouette: two pairs of flapping wings on a little body
+function drawMothShape(ctx, x, y, s, flap, col) {
+  const k = 0.35 + Math.abs(Math.sin(flap)) * 0.65;
+  ctx.fillStyle = col;
+  ctx.beginPath();
+  ctx.ellipse(x - s * 0.9, y - s * 0.2, s, s * 0.7 * k, -0.5, 0, 6.283);
+  ctx.ellipse(x + s * 0.9, y - s * 0.2, s, s * 0.7 * k, 0.5, 0, 6.283);
+  ctx.ellipse(x - s * 0.6, y + s * 0.5, s * 0.6, s * 0.45 * k, 0.4, 0, 6.283);
+  ctx.ellipse(x + s * 0.6, y + s * 0.5, s * 0.6, s * 0.45 * k, -0.4, 0, 6.283);
+  ctx.fill();
+  ctx.fillRect(x - s * 0.15, y - s * 0.6, s * 0.3, s * 1.4);
+}
+
+// Storm Mill: drive shafts hang from the ceilings, turning the mill's cogs
+function drawMillShafts(ctx, cam, world, time) {
+  const x0 = Math.floor(cam.x / T) - 1, x1 = x0 + Math.ceil(cam.w / T) + 2;
+  for (let tx = x0; tx <= x1; tx++) {
+    if (((tx % 9) + 9) % 9 !== 4) continue;
+    for (let ty = 1; ty < world.h - 4; ty++) {
+      if (!world.isSolid(tx, ty) || world.cell(tx, ty) === EMITTER) continue;
+      if (world.isSolid(tx, ty + 1) || world.isSolid(tx, ty + 2) || world.isSolid(tx + 1, ty + 1) || world.isSolid(tx + 1, ty + 2)) continue;
+      const x = tx * T + T / 2, y = (ty + 1) * T;
+      if (y < cam.y - 80 || y > cam.y + cam.h + 20) continue;
+      const spin = time * 1.2 + tx;
+      ctx.fillStyle = '#3a2e44'; ctx.fillRect(x - 3, y, 6, 34);
+      ctx.fillRect(x - 7, y, 14, 4);
+      ctx.save(); ctx.translate(x, y + 36); ctx.scale(1, 0.38);
+      gear(ctx, 0, 0, 18, 10, spin, '#4c3c50', 6);
+      ctx.restore();
+      gear(ctx, x + 27, y + 24, 7, 7, -spin * 10 / 7, '#4c3c50', 4);
+      ctx.fillStyle = '#3a2e44'; ctx.fillRect(x + 27, y + 22, 20, 4);
+    }
+  }
+}
+
+// Hay Maze: lanterns swinging on chains under the barn's floors
+function drawBarnLanterns(ctx, cam, world, time) {
+  const x0 = Math.floor(cam.x / T) - 1, x1 = x0 + Math.ceil(cam.w / T) + 2;
+  for (let tx = x0; tx <= x1; tx++) {
+    if (((tx % 11) + 11) % 11 !== 5) continue;
+    for (let ty = 1; ty < world.h - 4; ty++) {
+      if (!world.isSolid(tx, ty) || world.isSolid(tx, ty + 1) || world.isSolid(tx, ty + 2) || world.isSolid(tx, ty + 3)) continue;
+      const x = tx * T + T / 2, y = (ty + 1) * T;
+      if (y < cam.y - 60 || y > cam.y + cam.h + 20) continue;
+      const sw = Math.sin(time * 1.3 + tx * 0.7 + ty) * 0.16;
+      const lx = x + Math.sin(sw) * 22, ly = y + Math.cos(sw) * 22;
+      ctx.strokeStyle = '#2a1a22'; ctx.lineWidth = 1.5;
+      ctx.beginPath(); ctx.moveTo(x, y); ctx.lineTo(lx, ly); ctx.stroke();
+      ctx.fillStyle = '#3a2420';
+      ctx.fillRect(lx - 6, ly, 12, 3); ctx.fillRect(lx - 6, ly + 13, 12, 3);
+      ctx.fillStyle = '#ffcf7a'; ctx.fillRect(lx - 4.5, ly + 3, 9, 10);
+      ctx.fillStyle = '#3a2420'; ctx.fillRect(lx - 0.75, ly + 3, 1.5, 10);
+      glow(lx - cam.x, ly + 8 - cam.y, 60, '255,180,90', 0.2);
+      glow(lx - cam.x, ly + 8 - cam.y, 12, '255,230,170', 0.6);
+    }
+  }
+}
+
 // ------------------------------------------------------------ world-space details (after decor)
 export function drawThemeWorld(ctx, cam, world, time, th) {
   if (th.name === 'tower') drawBells(ctx, cam, world, time);
   if (th.name === 'canal') drawFloatingLanterns(ctx, cam, world, time);
   if (th.name === 'cold') drawSnowSparkle(ctx, cam, world, time);
+  if (th.name === 'barn') drawBarnLanterns(ctx, cam, world, time);
+  if (world.data && world.data.scene === 'waterwheel') drawMillShafts(ctx, cam, world, time);
 }
 
 function drawBells(ctx, cam, world, time) {
@@ -389,6 +753,18 @@ export function updateThemeFx(dt, P, cam, world, player, th, sfx) {
       if (s.chime <= 0) { s.chime = 9 + rnd() * 8; sfx('bell'); }
       break;
   }
+  switch (world.data && world.data.scene) {
+    case 'scorch':
+      if (rnd() < 6 * dt) P.ember(cam.x + rnd() * cam.w, cam.y + cam.h + 10, 0.5, 20);
+      if (rnd() < 3 * dt) P.ash(cam.x + rnd() * cam.w, cam.y + rnd() * cam.h * 0.3);
+      break;
+    case 'mothmoon':
+      if (rnd() < 4 * dt) P.mote(cam.x + rnd() * cam.w, cam.y + cam.h * (0.3 + rnd() * 0.6));
+      break;
+    case 'gears':
+      if (rnd() < 1.5 * dt) P.steam(cam.x + rnd() * cam.w, cam.y + cam.h * 0.2 + rnd() * cam.h * 0.3);
+      break;
+  }
   if (th.name === 'fair') {
     for (const f of s.fw) f.t += dt;
     s.fw = s.fw.filter((f) => f.t < 1.6);
@@ -402,6 +778,20 @@ export function updateThemeFx(dt, P, cam, world, player, th, sfx) {
 
 // ------------------------------------------------------------ after the darkness: queued glows + screen effects
 export function drawThemeOverlay(ctx, world, time, th) {
+  for (let i = 0; i < beams.length; i += 3) {
+    // the beam swings round: long when side-on, short when pointing at us
+    const x = beams[i], y = beams[i + 1], c = Math.cos(beams[i + 2]);
+    const len = 520 * Math.abs(c), dir = c > 0 ? 1 : -1;
+    if (len < 20) continue;
+    ctx.save();
+    ctx.globalCompositeOperation = 'lighter';
+    const g = ctx.createLinearGradient(x, y, x + dir * len, y);
+    g.addColorStop(0, 'rgba(255,235,180,0.22)');
+    g.addColorStop(1, 'rgba(255,235,180,0)');
+    ctx.fillStyle = g;
+    ctx.beginPath(); ctx.moveTo(x, y - 4); ctx.lineTo(x + dir * len, y - 46); ctx.lineTo(x + dir * len, y + 30); ctx.lineTo(x, y + 4); ctx.fill();
+    ctx.restore();
+  }
   if (glows.length) {
     ctx.save();
     ctx.globalCompositeOperation = 'lighter';

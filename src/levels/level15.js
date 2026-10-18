@@ -5,6 +5,7 @@ export default {
   name: "Gale Locks",
   hint: "Wind, plates and fire.",
   theme: "wind",
+  scene: "locks",
   ambient: 0.84,
   wind: {"gust":1.5,"calm":3},
   tiles: [

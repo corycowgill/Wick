@@ -5,6 +5,7 @@ export default {
   name: "Harvest Lifts",
   hint: "Ride the carts and lifts.",
   theme: "harvest",
+  scene: "hoist",
   ambient: 0.86,
   dark: [[61,12,90,21]],
   tiles: [

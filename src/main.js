@@ -11,7 +11,7 @@ import {
   drawTileGlows, drawMist, drawForeground, themeOf, drawDripGuide, drawDecor, drawDecorGlows,
   drawJumpShadow, drawLightDetail, drawWindStreaks,
 } from './render/draw-world.js';
-import { drawWick } from './render/draw-wick.js';
+import { drawWick, wickMood } from './render/draw-wick.js';
 import { Particles } from './render/particles.js';
 import { Audio } from './audio.js';
 import { UI } from './ui.js';
@@ -166,6 +166,7 @@ Events.on('dripFail', (e) => {
 Events.on('reabsorb', (e) => { Audio.sfx('reabsorb'); P.absorb(e.x, e.y, e.tx, e.ty); });
 Events.on('melt', (e) => { Audio.sfx('melt'); P.splat(e.x, e.y - 4, 4); });
 Events.on('relight', (e) => {
+  wickMood('joy', 1.4);
   Audio.sfx('relight');
   P.sparks(e.x, e.y, 26, 220);
   P.ring(e.x, e.y, 170);
@@ -176,6 +177,7 @@ Events.on('relight', (e) => {
   Input.gamepad.rumble('relight');
 });
 Events.on('pickup', (e) => {
+  wickMood('joy', 1);
   Audio.sfx('pickup');
   P.sparks(e.x, e.y, 10, 140, '255,200,90');
   P.ring(e.x, e.y, 80);
@@ -184,8 +186,9 @@ Events.on('pickup', (e) => {
 Events.on('blobLand', (e) => { P.splat(e.x, e.y - 4, 6); P.dust(e.x, e.y, 4, 0.5); });
 Events.on('ignite', (e) => { Audio.sfx('ignite'); P.sparks(e.x, e.y, 6, 90); });
 Events.on('plate', (e) => { Audio.sfx('plate', { down: e.down }); if (e.down) P.dust(e.x, e.y, 4, 0.4); });
-Events.on('door', (e) => { Audio.sfx('door', { open: e.open }); P.dust(e.x, e.y, 8, 0.7); state.camera.shake(1.5); });
+Events.on('door', (e) => { if (e.open) wickMood('surprise', 0.6); Audio.sfx('door', { open: e.open }); P.dust(e.x, e.y, 8, 0.7); state.camera.shake(1.5); });
 Events.on('moth', (e) => {
+  wickMood('ouch', 0.7);
   Audio.sfx('moth');
   state.hudFail = 1;
   P.sparks(e.x, e.y, 10, 120, '255,230,190');
@@ -204,6 +207,7 @@ Events.on('death', (e) => {
   Input.gamepad.rumble('death');
 });
 Events.on('levelComplete', (e) => {
+  wickMood('joy', 3);
   Audio.sfx('complete');
   P.sparks(e.x, e.y, 60, 320);
   P.ring(e.x, e.y, 320);
@@ -499,7 +503,7 @@ function renderPlay(t) {
   if (!state.completeTimer) {
     drawDripGuide(ctx, player, world, t, { absorbGlyph: UI.glyphs(Input.lastDevice).absorb });
   }
-  drawWick(ctx, player, t);
+  drawWick(ctx, player, t, { world });
   drawMoths(ctx, cam, world, t);
   drawMist(ctx, cam, world, t);
   ctx.restore();

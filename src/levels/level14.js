@@ -5,6 +5,7 @@ export default {
   name: "Storm Mill",
   hint: "Rain, plates and a lift.",
   theme: "rain",
+  scene: "waterwheel",
   ambient: 0.9,
   dark: [[23,12,39,17]],
   tiles: [
