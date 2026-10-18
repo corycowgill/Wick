@@ -11,5 +11,8 @@ import level9 from './level9.js';
 import level10 from './level10.js';
 import level11 from './level11.js';
 import level12 from './level12.js';
+import level13 from './level13.js';
+import level14 from './level14.js';
+import level15 from './level15.js';
 
-export default [level1, level2, level3, level4, level5, level6, level7, level8, level9, level10, level11, level12];
+export default [level1, level2, level3, level4, level5, level6, level7, level8, level9, level10, level11, level12, level13, level14, level15];

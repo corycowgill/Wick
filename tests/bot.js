@@ -194,26 +194,43 @@ export function search(levelData, opts = {}) {
   const progs = programs({ drip: opts.drip !== false, hazards: CLOCKED, puzzle: PUZZLE });
   const nT = world.torches.length, nP = world.pumpkins.length;
 
-  // fuse/gate handling: gates opened by any fuse the bot has lit stay open
-  // opened: flammable -> time it is gone (Infinity until lit). Without hazards, gone at once.
-  const opened = new Map();
-  const applyOpened = (now = Infinity) => {
+  // fuse/gate handling: each state remembers the fuses it lit ([cell, time]).
+  // opened: flammable -> { ign, gone } times. Without hazards, gone at once.
+  const netCache = new Map();
+  const openedFor = (fires) => {
+    const k = (fires || []).map((x) => x[0] + '@' + x[1].toFixed(3)).join('|');
+    let o = netCache.get(k);
+    if (!o) {
+      o = new Map();
+      for (const [cell, t] of fires || []) openNetwork(o, world.flammables.get(cell), t);
+      if (netCache.size > 5000) netCache.clear();
+      netCache.set(k, o);
+    }
+    return o;
+  };
+  const applyOpened = (opened, now = Infinity) => {
     for (const f of world.flammables.values()) {
-      const at = opened.get(f);
-      if (at !== undefined && now >= at) { f.state = 'gone'; if (f.solid) world.clearCell(f.tx, f.ty); }
+      const o = opened.get(f);
+      if (!o || now < o.ign) continue;
+      if (now >= o.gone) { f.state = 'gone'; if (f.solid) world.clearCell(f.tx, f.ty); continue; }
+      // still burning at this moment: resume the fire where it is
+      f.state = 'burning'; f.t = now - o.ign; f.spreadDone = f.t >= f.spread;
     }
   };
-  const openNetwork = (start, t0 = 0) => {
-    // breadth-first along the network so each cell burns out after the fire reaches it
+  const openNetwork = (opened, start, t0 = 0) => {
+    // earliest-arrival spread along the network, so each cell burns out after the fire reaches it
     const q = [[start, t0]];
-    const seen = new Set([start]);
+    const seen = new Map([[start, t0]]);
     while (q.length) {
+      q.sort((a, b) => a[1] - b[1]);
       const [f, t] = q.shift();
       const gone = HZ ? t + f.burn : 0;
-      if (!opened.has(f) || opened.get(f) > gone) opened.set(f, gone);
+      const prev = opened.get(f);
+      if (!prev || prev.gone > gone) opened.set(f, { ign: HZ ? t : 0, gone });
       for (const [dx, dy] of [[1, 0], [-1, 0], [0, 1], [0, -1]]) {
         const n = world.flammables.get((f.ty + dy) * world.w + f.tx + dx);
-        if (n && !seen.has(n)) { seen.add(n); q.push([n, t + f.spread]); }
+        const tn = t + f.spread;
+        if (n && (!seen.has(n) || seen.get(n) > tn)) { seen.set(n, tn); q.push([n, tn]); }
       }
     }
   };
@@ -232,12 +249,20 @@ export function search(levelData, opts = {}) {
   // with hazards the clock matters too (coarse phase bucket)
   const keyOf = (s) => `${Math.floor((s.x + CFG.BODY_W / 2) / T)},${Math.round(s.feet / T)},${s.pm},${s.tm}` +
     (CLOCKED ? `,${Math.floor(s.time) % 20}` : '') +
-    (PUZZLE ? `,${(s.blobs || []).map((b) => b[0] + ':' + b[1]).sort().join(';')}` : '');
+    (PUZZLE ? `,${plateMask(s)}` : '') +
+    (world.flammables.size ? `,F${(s.fires || []).map((x) => x[0]).sort().join('.')}` : '');
+  // only wax on plates changes what the level allows; other blobs are just footholds
+  function plateMask(s) {
+    let m = 0;
+    for (const b of s.blobs || []) world.plates.forEach((pl, i) => { if (pl.tx === b[0] && pl.ty === b[1]) m |= 1 << i; });
+    return m;
+  }
   const push = (s) => {
     const k = keyOf(s);
     const b = best.get(k);
     if (b && b.wax >= s.wax - 0.5) return;
     best.set(k, s);
+    s.pri = PUZZLE ? s.wax + (opts.bias ?? 0.4) * (s.x / T) : s.wax;   // puzzles: lean toward progress
     heapPush(queue, s);
   };
   // startState: continue from a state of an earlier search (chained, segment by segment)
@@ -246,7 +271,6 @@ export function search(levelData, opts = {}) {
 
   const maxStates = opts.maxStates || (CLOCKED ? 200000 : 60000);
   let expanded = 0;
-  let restart = false;
 
   while (queue.length && expanded < maxStates) {
     const s = heapPop(queue);           // best-first: highest wax
@@ -255,7 +279,7 @@ export function search(levelData, opts = {}) {
 
     for (const [name, prog, cost] of progs) {
       world.restore(base);
-      applyOpened(HZ ? s.time : Infinity);
+      applyOpened(openedFor(s.fires), HZ ? s.time : Infinity);
       if (CLOCKED) {
         // hazards and platforms on the real clock; refresh their on/off state now, because the player
         // reads it before the next world update would
@@ -263,6 +287,7 @@ export function search(levelData, opts = {}) {
       }
       // blobs from earlier moves still stand (they last 14s), as in real play
       if (CARRY) for (const [bx, by, age] of s.blobs || []) {
+        if (world.cell(bx, by) === DOOR) world.grid[by * world.w + bx] = 0;   // wedged in a doorway that was open
         const b = world.addBlob(bx, by, by * T);
         if (b) { b.age = age; b.drawY = b.y; }
       }
@@ -282,7 +307,7 @@ export function search(levelData, opts = {}) {
       let f = 0, done = false, ok = false;
       sims++;
       const ignitedFuses = [];
-      world.onIgnite = (fl) => { if (fl.type === 'fuse') ignitedFuses.push([fl, s.time + f * DT]); };
+      world.onIgnite = (fl) => { ignitedFuses.push([fl, s.time + f * DT]); };
       const rec = opts.record ? [] : null;
       while (f < 60 * 6) {
         const input = done ? inp() : prog(player, world, f, mem);
@@ -297,10 +322,16 @@ export function search(levelData, opts = {}) {
         // settled: on the ground and at rest, so the next move starts exactly where this one ended
         if (done && player.onGround && player.vy === 0 && (!rec || (player.vx === 0 && player.windVx === 0))) { ok = true; break; }
       }
+      // fuses this move lit (one per network is enough: the rest is the spread)
+      let fires = s.fires || [];
       if (ignitedFuses.length) {
-        const before = [...opened.values()].join();
-        for (const [fl, t] of ignitedFuses) openNetwork(fl, t);
-        if ([...opened.values()].join() !== before) restart = true;
+        let known = openedFor(fires);
+        fires = [...fires];
+        for (const [fl, t] of ignitedFuses) {
+          if (known.has(fl)) continue;
+          fires.push([fl.ty * world.w + fl.tx, t]);
+          openNetwork(known = new Map(known), fl, t);
+        }
       }
       if (!ok || !player.alive) continue;
 
@@ -309,7 +340,7 @@ export function search(levelData, opts = {}) {
       const ns = {
         x: player.x, feet: player.feet, wax: player.wax, pm, tm,
         time: s.time + f * DT, fc: s.fc + f, wet: player.wetTime, hurt: player.hurt, parent: s, act: name,
-        ride: player.riding ? world.movers.indexOf(player.riding) : -1,
+        ride: player.riding ? world.movers.indexOf(player.riding) : -1, fires,
         blobs: CARRY ? world.blobs.map((b) => [b.tx, b.ty, b.age]) : null,
         complete: world.complete, frames: rec ? Int8Array.from(rec) : null,
         arrivals: arrivalWax !== null ? [...s.arrivals, Math.round(arrivalWax)] : s.arrivals,
@@ -326,18 +357,8 @@ export function search(levelData, opts = {}) {
       if (!standingOnPermanent(player, world, PUZZLE) && !player.riding) continue;
       push(ns);
     }
-    if (restart) {
-      // a fuse opened new gates: rebuild the base state and requeue everything
-      restart = false;
-      if (!HZ) {
-        world.restore(base);
-        applyOpened();
-        base = world.snapshot();
-      }
-      for (const st of best.values()) heapPush(queue, st);
-    }
     // clocked levels have ~20x the states: best-first by wax, so the first goal is near the best anyway
-    if (goalHit && (opts.firstHit ?? CLOCKED)) break;
+    if (goalHit && (opts.firstHit ?? (CLOCKED || PUZZLE))) break;
   }
   Events.muted = false;
   return { goal: goalHit, expanded, sims, torchHits, world, states: best.size, best };
@@ -355,7 +376,7 @@ function heapPush(h, v) {
   let i = h.length - 1;
   while (i > 0) {
     const p = (i - 1) >> 1;
-    if (h[p].wax >= h[i].wax) break;
+    if (h[p].pri >= h[i].pri) break;
     [h[p], h[i]] = [h[i], h[p]];
     i = p;
   }
@@ -369,8 +390,8 @@ function heapPop(h) {
     for (;;) {
       const l = i * 2 + 1, r = l + 1;
       let m = i;
-      if (l < h.length && h[l].wax > h[m].wax) m = l;
-      if (r < h.length && h[r].wax > h[m].wax) m = r;
+      if (l < h.length && h[l].pri > h[m].pri) m = l;
+      if (r < h.length && h[r].pri > h[m].pri) m = r;
       if (m === i) break;
       [h[m], h[i]] = [h[i], h[m]];
       i = m;
