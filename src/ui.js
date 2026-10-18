@@ -17,7 +17,7 @@ const GLYPHS = {
 
 export const UI = {
   menuRects: [],
-  SELECT_COLS: 4,
+  SELECT_COLS: 6,
   toasts: [],
 
   glyphs(device) { return GLYPHS[device] || GLYPHS.keyboard; },
@@ -263,9 +263,15 @@ export const UI = {
     ctx.fillStyle = 'rgba(14,6,28,0.55)'; ctx.fillRect(0, 0, W, H);
     ctx.textAlign = 'center'; ctx.textBaseline = 'middle';
     titleText(ctx, 'Choose a level', W / 2, 62, 42);
-    const cols = this.SELECT_COLS, cw = 200, ch = 92, gap = 14;
+    const cols = this.SELECT_COLS, cw = 146, ch = 84, gap = 10;
     const rows = Math.ceil(levels.length / cols);
-    const x0 = W / 2 - (cols * cw + (cols - 1) * gap) / 2, y0 = 112;
+    const x0 = W / 2 - (cols * cw + (cols - 1) * gap) / 2, y0 = 108;
+    // shrink a line's font until it fits the card
+    const fit = (text, weight, size, family, y, cx) => {
+      let px = size;
+      do { ctx.font = `${weight} ${px}px ${family}`; } while (ctx.measureText(text).width > cw - 14 && --px > 8);
+      ctx.fillText(text, cx + cw / 2, y);
+    };
     this.menuRects = [];
     levels.forEach((L, i) => {
       const cx = x0 + (i % cols) * (cw + gap), cy = y0 + Math.floor(i / cols) * (ch + gap);
@@ -278,18 +284,16 @@ export const UI = {
       ctx.lineWidth = 2; ctx.stroke();
       ctx.font = `700 13px ${SANS}`;
       ctx.fillStyle = on ? '#2a1630' : open ? '#e8b03a' : 'rgba(200,180,200,0.45)';
-      ctx.fillText(`LEVEL ${i + 1}`, cx + cw / 2, cy + 24);
-      ctx.font = `700 18px ${SERIF}`;
+      ctx.fillText(`LEVEL ${i + 1}`, cx + cw / 2, cy + 20);
       ctx.fillStyle = on ? '#2a1630' : open ? '#fbe9c8' : 'rgba(200,180,200,0.45)';
-      ctx.fillText(open ? L.name : 'Locked', cx + cw / 2, cy + 50);
-      ctx.font = `italic 12px ${SERIF}`;
+      fit(open ? L.name : 'Locked', 700, 17, SERIF, cy + 44, cx);
       ctx.fillStyle = on ? 'rgba(42,22,48,0.85)' : 'rgba(251,233,200,0.6)';
-      if (open) ctx.fillText(L.hint, cx + cw / 2, cy + 72);
+      if (open) fit(L.hint, 'italic', 12, SERIF, cy + 66, cx);
       if (!open) {
         // a little padlock
         ctx.strokeStyle = 'rgba(200,180,200,0.45)'; ctx.lineWidth = 2;
-        ctx.beginPath(); ctx.arc(cx + cw / 2, cy + 70, 5, Math.PI, 0); ctx.stroke();
-        ctx.fillStyle = 'rgba(200,180,200,0.45)'; ctx.fillRect(cx + cw / 2 - 7, cy + 70, 14, 10);
+        ctx.beginPath(); ctx.arc(cx + cw / 2, cy + 64, 5, Math.PI, 0); ctx.stroke();
+        ctx.fillStyle = 'rgba(200,180,200,0.45)'; ctx.fillRect(cx + cw / 2 - 7, cy + 64, 14, 10);
       }
     });
     // back button

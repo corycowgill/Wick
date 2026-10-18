@@ -88,7 +88,7 @@ function write(n, meta, g) {
   g.ground(111, 129, 9).put(122, 8, 'G').put(116, 8, 'n');
   g.sign(113, 8, 'Light the great torch to finish the street.');
   define('market', {
-    name: 'Market Row', hint: 'Your wax is your light. Reach the torch.',
+    name: 'Market Row', hint: 'Wax is your light. Reach the torch.',
     extra: { theme: 'dusk', ambient: 0.76, dark: [[45, 58]] },
   }, g);
 }
@@ -624,8 +624,124 @@ function write(n, meta, g) {
   }, g);
 }
 
+// ---------------------------------------------------------------- stormmill
+// Mixes rain, plates, lifts and fire: wax holds a plate in the rain, a lift
+// rises through a hatch in the dark, and a fuse hangs over a lift under a drip.
+{
+  const W = 112, H = 22;
+  const g = new Grid(W, H);
+  g.ground(0, W - 1, 18).put(3, 17, 'S');
+  // R1. a plate under the rain: stand on it and you drown, so let wax hold it
+  g.rect(8, 0, 26, 8);                                   // mill roof
+  g.sign(5, 17, 'Rain on the plate? Wax does not mind the wet.');
+  g.rect(13, 8, 15, 8, '~').put(14, 17, 'o');
+  g.rect(22, 9, 22, 14).rect(22, 15, 22, 17, 'd');
+  g.put(25, 17, 'T');
+  // R2. the dark millroom: its plate opens the hatch the lift rises through
+  g.rect(27, 11, W - 1, 11);                             // upper floor
+  g.put(30, 11, '~').put(30, 17, 'o');
+  g.rect(34, 11, 36, 11, 'd');                           // hatch
+  g.entities.push({ type: 'mover', x: 34, y: 18, w: 3, to: [34, 11], period: 6, phase: 0 });
+  g.rect(40, 12, W - 1, 17);
+  g.sign(28, 17, 'The hatch above opens from this plate.');
+  // R3. the fuse hangs over a lift; the lift waits under a drip
+  g.put(44, 10, 'T');
+  g.rect(42, 0, W - 1, 1);                               // upper roof
+  g.rect(55, 1, 56, 1, '~');
+  g.entities.push({ type: 'mover', x: 58, y: 11, w: 3, to: [58, 5], period: 5, phase: 1 });
+  g.rect(59, 2, 71, 2, 'f');
+  g.rect(72, 2, 73, 10, 'g');
+  g.sign(48, 10, 'Ride up and light the fuse. Mind the drip.');
+  g.put(84, 10, 'P').put(92, 10, 'n').put(104, 10, 'G');
+  define('stormmill', {
+    name: 'Storm Mill', hint: 'Rain, plates and a lift.',
+    extra: { theme: 'rain', ambient: 0.9, dark: [[23, 12, 39, 17]] },
+  }, g);
+}
+
+// ---------------------------------------------------------------- galelocks
+// Mixes wind, plates and fire: hold a plate and ride a tailwind through its
+// door, hold a plate out on a post in a headwind, and race a burning bridge.
+{
+  const W = 124, H = 20;
+  const g = new Grid(W, H);
+  g.ground(0, 20, 14).put(3, 13, 'S');
+  g.ground(21, 83, 18);                                  // valley floor
+  const deck = (x0, x1) => {
+    g.rect(x0, 14, x1, 14);
+    for (let x = x0 + 2; x <= x1 - 1; x += 5) g.rect(x, 15, x, 17);
+  };
+  const door = (x) => { g.rect(x, 0, x, 10).rect(x, 11, x, 13, 'd'); };
+  // R1. wax on the plate, then leap the 6-wide gap with the gust
+  g.sign(6, 13, 'Wax holds the plate. The gust carries you to its door.');
+  g.put(17, 13, 'o');
+  deck(27, 44);                                          // gap 21-26
+  g.fill(14, 5, 30, 13, 'W');
+  door(34);
+  g.put(38, 13, 'T');
+  // R2. a plate on a post in a headwind
+  for (const x of [48, 51, 54]) g.rect(x, 14, x, 17);
+  g.put(54, 13, 'o');
+  deck(58, 70);
+  g.fill(46, 5, 60, 13, 'W');
+  door(62);
+  g.sign(42, 13, 'A plate on a post, in the wind. Hold it with wax.');
+  // R3. the web lights the bridge's far end. Cross before it burns to you.
+  g.put(65, 13, 'T');
+  g.rect(68, 9, 68, 13, 'w');
+  g.rect(69, 9, 69, 9, 'f').rect(69, 4, 69, 8, 'f').rect(70, 4, 83, 4, 'f').rect(83, 5, 83, 14, 'f');
+  g.rect(71, 14, 82, 14, 'g');                           // the bridge
+  g.fill(70, 5, 82, 13, 'W');
+  g.sign(66, 13, 'The bridge burns from the far end. Mind the gusts.');
+  g.ground(84, W - 1, 14).put(116, 13, 'G').put(92, 13, 'P').put(104, 13, 'n');
+  for (const x of [21, 45, 55]) g.rect(x, 16, x, 17);    // escape steps
+  g.entities.push(
+    { type: 'wind', dir: 1, phase: 0 },
+    { type: 'wind', dir: -1, phase: 1.5 },
+    { type: 'wind', dir: -1, gust: 1.2, calm: 3.4, phase: 0.6 },
+  );
+  define('galelocks', {
+    name: 'Gale Locks', hint: 'Wind, plates and fire.',
+    extra: { theme: 'wind', ambient: 0.84, wind: { gust: 1.5, calm: 3.0 } },
+  }, g);
+}
+
+// ---------------------------------------------------------------- mothmill
+// Mixes moths, plates and moving parts: a plate under a moth's loop opens a
+// door a cart passes through; a plate up a lift opens a door at its foot.
+{
+  const W = 116, H = 22;
+  const g = new Grid(W, H);
+  g.ground(0, 23, 18).put(3, 17, 'S');
+  g.sign(5, 17, 'Mill moths circle the plates. Let wax do the standing.');
+  // R1. plate under a moth; the cart's run passes through its door
+  g.put(15, 17, 'o');
+  g.entities.push({ type: 'moth', x: 15, y: 15, r: 2, period: 4, phase: 0 });
+  g.ground(24, 42, 21).ground(24, 24, 19).ground(25, 25, 20);   // the lane, steps out
+  g.entities.push({ type: 'mover', x: 24, y: 18, w: 3, to: [39, 18], period: 6, phase: 0 });
+  g.rect(33, 0, 33, 14).rect(33, 15, 33, 20, 'd');
+  g.sign(19, 17, 'The cart runs through that door.');
+  // R2. the plate is up the lift; its door is down here
+  g.ground(43, 71, 18).put(46, 17, 'T');
+  g.entities.push({ type: 'mover', x: 50, y: 18, w: 3, to: [50, 10], period: 5, phase: 0 });
+  g.entities.push({ type: 'moth', x: 52, y: 8, r: 2, period: 5, phase: 2.5 });
+  g.rect(53, 10, 58, 11).put(56, 9, 'o');
+  g.rect(63, 0, 63, 14).rect(63, 15, 63, 17, 'd');
+  g.sign(44, 17, 'The plate is up top. Its door is down here.');
+  // R3. a cart across a dark lane, with a moth on the water
+  g.put(67, 17, 'T');
+  g.ground(72, 93, 21).ground(72, 72, 19).ground(73, 73, 20);
+  g.entities.push({ type: 'mover', x: 72, y: 18, w: 3, to: [91, 18], period: 7, phase: 0 });
+  g.entities.push({ type: 'moth', x: 82, y: 15, r: 2.5, period: 5, phase: 0 });
+  g.ground(94, W - 1, 18).put(99, 17, 'h').put(102, 17, 'n').put(108, 17, 'G');
+  define('mothmill', {
+    name: 'Moth Mill', hint: 'Moths, plates and carts.',
+    extra: { theme: 'violet', ambient: 0.88, dark: [[70, 0, 95, 21]] },
+  }, g);
+}
+
 // ---------------------------------------------------------------- write, in play order
-const ORDER = ['market', 'canal', 'windy', 'lifts', 'rain', 'works', 'tower', 'moths', 'hay', 'firebreak', 'fair', 'ferries', 'clockwork', 'cold', 'castle'];
+const ORDER = ['market', 'canal', 'windy', 'lifts', 'rain', 'works', 'tower', 'moths', 'hay', 'firebreak', 'fair', 'ferries', 'clockwork', 'stormmill', 'galelocks', 'mothmill', 'cold', 'castle'];
 ORDER.forEach((key, i) => write(i + 1, DEFS[key].meta, DEFS[key].g));
 const index = [
   '// All levels in play order. Generated by tools/levelgen.js.',

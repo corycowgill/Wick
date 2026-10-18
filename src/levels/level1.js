@@ -3,7 +3,7 @@
 //         G goal  w cobweb  f fuse  g gate  W wind  o plate  d door  h hay  b barrel  k crate  n banner
 export default {
   name: "Market Row",
-  hint: "Your wax is your light. Reach the torch.",
+  hint: "Wax is your light. Reach the torch.",
   theme: "dusk",
   ambient: 0.76,
   dark: [[45,58]],
