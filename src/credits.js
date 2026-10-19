@@ -54,6 +54,8 @@ export const CREDITS = [
   ['t', '(the moths now work at the mill. They were not consulted.)'],
   ['q', '"Add more style and personality"'],
   ['t', '(Wick now naps if you stop playing. This is not a bug.)'],
+  ['q', '"Audit the game as a game critic"'],
+  ['t', '(the critic asked for medals. The moths asked for nothing.)'],
   ['g'], ['g'],
   ['h', 'By the numbers'],
   ['t', 'Lines of code written by a human: 0'],

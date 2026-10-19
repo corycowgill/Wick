@@ -18,7 +18,9 @@ export const CFG = {
   DRIP_MIN_LEFT: 5,       // cannot drip if wax would fall below this
   TORCH_REFILL: 40,
   PUMPKIN_REFILL: 15,
-  RESPAWN_MIN: 70,        // respawn wax = max(wax at checkpoint, this). Tuned up from 50 so no torch soft-locks
+  RESPAWN_MIN: 40,        // respawn wax = max(wax you had at the checkpoint, floor): dying is not a refill.
+                          // floor = level.torchFloors[torch] ?? this: torches whose way on needs more set
+                          // their own (the bot checks every torch -> next torch at its floor, hazards on)
 
   // body
   BODY_W: 24,

@@ -58,7 +58,7 @@ section('Wax management required (no-drip bot must fail)');
 }
 
 if (!QUICK) {
-  section('Torch to torch at the guaranteed respawn wax (RESPAWN_MIN)');
+  section('Torch to torch at the guaranteed respawn wax (per-torch floor)');
   for (let i = 0; i < LEVELS.length; i++) {
     const r = routes[i];
     if (!r) continue;
@@ -78,13 +78,14 @@ if (!QUICK) {
       const torch = world.torches[o.idx];
       const lit = order.slice(0, k + 1).map((x) => x.idx);
       const taken = world.pumpkins.map((_, j) => j).filter((j) => o.pm & (1 << j));
+      const floor = torch.floor;
       const res = search(LEVELS[i], {
-        start: { x: torch.x - CFG.BODY_W / 2, feet: torch.y, wax: CFG.RESPAWN_MIN },
+        start: { x: torch.x - CFG.BODY_W / 2, feet: torch.y, wax: floor },
         litTorches: lit, takenPumpkins: taken, target: 'nextTorch', firstHit: true,
       });
       const to = k + 1 < order.length ? `torch ${k + 2}` : 'goal';
-      if (res.goal) ok(`level ${i + 1}: torch ${k + 1} -> ${to} at ${CFG.RESPAWN_MIN} wax (${res.goal.wax.toFixed(0)} left)`);
-      else fail(`level ${i + 1}: torch ${k + 1} -> ${to} NOT reachable at ${CFG.RESPAWN_MIN} wax`);
+      if (res.goal) ok(`level ${i + 1}: torch ${k + 1} -> ${to} at ${floor} wax (${res.goal.wax.toFixed(0)} left)`);
+      else fail(`level ${i + 1}: torch ${k + 1} -> ${to} NOT reachable at ${floor} wax`);
     });
   }
 }

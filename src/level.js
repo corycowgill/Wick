@@ -12,6 +12,7 @@ import { Cobweb } from './entities/cobweb.js';
 import { Fuse, Gate } from './entities/fuse.js';
 import { Mover } from './entities/mover.js';
 import { Moth } from './entities/moth.js';
+import { Keepsake } from './entities/keepsake.js';
 
 const PROP_CHARS = { h: 'hay', j: 'jack', b: 'barrel', k: 'crate', n: 'banner', l: 'lamp' };
 
@@ -45,7 +46,7 @@ export function createWorld(data) {
   const pumpkins = [];
   const plates = [];
   const doorMask = new Uint8Array(w * h);
-  let spawn = null, goal = null;
+  let spawn = null, goal = null, keepsake = null;
 
   const key = (tx, ty) => ty * w + tx;
   const floorEntity = (tx, ty) => ({ x: (tx + 0.5) * T, y: (ty + 1) * T });
@@ -72,6 +73,7 @@ export function createWorld(data) {
           pumpkins.push(e); entities.push(e); break;
         }
         case 'G': { const p = floorEntity(tx, ty); goal = new Goal(p.x, p.y); entities.push(goal); break; }
+        case 'K': { const p = floorEntity(tx, ty); keepsake = new Keepsake(p.x, p.y); entities.push(keepsake); break; }
         case 'w': { grid[k] = COBWEB; const e = new Cobweb(tx, ty); flammables.set(k, e); entities.push(e); break; }
         case 'f': { const e = new Fuse(tx, ty); flammables.set(k, e); entities.push(e); break; }
         case 'g': { grid[k] = GATE; const e = new Gate(tx, ty); flammables.set(k, e); entities.push(e); break; }
@@ -157,6 +159,8 @@ export function createWorld(data) {
     doors.push({ cells, tx: Math.min(...cells.map((c) => c[0])), open: false, amt: 0, index: doors.length });
   }
   plates.sort((a, b) => a.tx - b.tx || a.ty - b.ty);
+  // Respawn floors: data.torchFloors[i] for torch i (row-major order), else CFG.RESPAWN_MIN.
+  torches.forEach((t, i) => { t.floor = data.torchFloors?.[i] ?? CFG.RESPAWN_MIN; });
   plates.forEach((pl, i) => { pl.door = data.links ? data.links[i] : i; });
 
   // Movers and moths: given in tile units; they run on the frame clock like wind and rain.
@@ -188,7 +192,7 @@ export function createWorld(data) {
     tiles,
     grid, dark,
     entities,
-    torches, pumpkins, goal, emitters, flammables, props, signs, movers, moths, plates, doors,
+    torches, pumpkins, goal, keepsake, emitters, flammables, props, signs, movers, moths, plates, doors,
     blobs: [],
     spawn,
     checkpoint: { x: spawn.x, y: spawn.y, wax: CFG.WAX_MAX },
@@ -311,11 +315,13 @@ export function createWorld(data) {
       }
     },
 
-    // Respawn at the last lit torch. Melts all blobs; burnt things stay burnt.
+    // Respawn at the last lit torch with the wax you had there, never below that
+    // torch's floor (what the way on to the next torch needs; see torchFloors).
+    // Melts all blobs; burnt things stay burnt, eaten pumpkins and found keepsakes stay taken.
     reset(player) {
       for (const b of [...this.blobs]) this.removeBlob(b);
       const cp = this.checkpoint;
-      player.spawn(cp.x, cp.y, Math.max(cp.wax, CFG.RESPAWN_MIN));
+      player.spawn(cp.x, cp.y, Math.max(cp.wax, cp.floor ?? CFG.RESPAWN_MIN));
     },
 
     // Bot support: capture/restore all mutable state.
@@ -326,6 +332,7 @@ export function createWorld(data) {
         flam: [...flammables.values()].map((f) => [f, f.state, f.t, f.spreadDone]),
         torches: torches.map((t) => t.lit),
         pumpkins: pumpkins.map((p) => p.taken),
+        keepsake: keepsake ? keepsake.got : false,
         goal: goal.lit,
         checkpoint: { ...this.checkpoint },
         complete: this.complete,
@@ -339,6 +346,7 @@ export function createWorld(data) {
       for (const [f, st, t, sd] of s.flam) { f.state = st; f.t = t; f.spreadDone = sd; }
       torches.forEach((t, i) => { t.lit = s.torches[i]; });
       pumpkins.forEach((p, i) => { p.taken = s.pumpkins[i]; });
+      if (keepsake) keepsake.got = s.keepsake;
       goal.lit = s.goal;
       this.checkpoint = { ...s.checkpoint };
       this.complete = s.complete;

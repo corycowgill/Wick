@@ -73,6 +73,20 @@ export const UI = {
       ctx.restore();
       drawFlame(ctx, x, base - ch - 4, 5 + 5 * frac, Math.sin(time * 2) * 0.15, time);
     }
+    if (opts.keepsake != null) {
+      // this level's keepsake: an empty outline until Wick finds it
+      const pop = opts.keepsakePop || 0;
+      const kx = 82, ky = base - 6, r = 10 * (1 + 0.6 * Math.sin(pop * Math.PI) * pop);
+      if (opts.keepsake) {
+        ctx.save();
+        ctx.globalCompositeOperation = 'lighter';
+        const kg = ctx.createRadialGradient(kx, ky, 0, kx, ky, r * 2.6);
+        kg.addColorStop(0, 'rgba(255,200,90,0.4)'); kg.addColorStop(1, 'rgba(255,160,60,0)');
+        ctx.fillStyle = kg; ctx.fillRect(kx - r * 3, ky - r * 3, r * 6, r * 6);
+        ctx.restore();
+      }
+      drawMark(ctx, 'keepsake', kx, ky, r, opts.keepsake);
+    }
     if (opts.muted) {
       ctx.fillStyle = 'rgba(251,233,200,0.7)';
       ctx.font = `600 13px ${SANS}`;
@@ -189,28 +203,87 @@ export const UI = {
     ctx.textAlign = 'center';
   },
 
+  // ---------------------------------------------------------------- story intro
+  // shown once, before Market Row on a fresh save; `t` is seconds since it opened
+  drawStory(ctx, t, device) {
+    drawBackground(ctx, { x: t * 14, y: 0, w: W, h: H }, TITLE_WORLD, t);
+    ctx.fillStyle = 'rgba(14,6,28,0.5)'; ctx.fillRect(0, 0, W, H);
+    // Wick, small, setting off
+    const glow = ctx.createRadialGradient(150, H - 50, 4, 150, H - 50, 120);
+    glow.addColorStop(0, 'rgba(255,170,80,0.35)'); glow.addColorStop(1, 'rgba(255,120,60,0)');
+    ctx.fillStyle = glow; ctx.fillRect(0, H - 200, 320, 200);
+    ctx.fillStyle = '#3c2140';
+    ctx.beginPath(); ctx.ellipse(150, H - 26, 70, 9, 0, 0, Math.PI * 2); ctx.fill();
+    ctx.save();
+    ctx.translate(150, H - 28);
+    ctx.scale(1.8, 1.8);
+    TITLE_WICK.x = -TITLE_WICK.w / 2; TITLE_WICK.y = -TITLE_WICK.h; TITLE_WICK.squash = Math.sin(t * 2) * 0.03;
+    drawWick(ctx, TITLE_WICK, t);
+    ctx.restore();
+
+    ctx.textAlign = 'center'; ctx.textBaseline = 'middle';
+    const top = H * 0.2;
+    ctx.save();
+    ctx.globalAlpha = clamp(t / 0.5, 0, 1);
+    ctx.fillStyle = 'rgba(20,10,36,0.55)';
+    ctx.fillRect(0, top, W, 176);
+    ctx.font = `600 16px ${SANS}`;
+    ctx.fillStyle = '#e8b03a';
+    ctx.fillText('THE NIGHT OF THE LANTERN FESTIVAL', W / 2, top + 30);
+    ctx.restore();
+    STORY_LINES.forEach((line, i) => {
+      const a = clamp((t - 0.6 - i * 1.3) / 0.7, 0, 1);
+      if (a <= 0) return;
+      ctx.globalAlpha = a;
+      ctx.font = `italic 22px ${SERIF}`;
+      ctx.fillStyle = '#fbe9c8';
+      ctx.fillText(line, W / 2, top + 74 + i * 36 + (1 - a) * 6);
+    });
+    ctx.globalAlpha = 1;
+    const pa = clamp((t - 4) / 0.6, 0, 1) * (0.55 + 0.45 * Math.sin(t * 3));
+    if (pa > 0) {
+      ctx.font = `700 20px ${SANS}`;
+      ctx.fillStyle = `rgba(255,214,140,${pa})`;
+      ctx.fillText(device === 'touch' ? 'Tap to begin' : 'Press any button to begin', W / 2, H * 0.62);
+    }
+    this.menuRects = [{ x: 0, y: 0, w: W, h: H }];
+  },
+
   // ---------------------------------------------------------------- end
-  drawEnd(ctx, time, stats, device) {
+  drawEnd(ctx, time, stats, device, meta = {}) {
     drawBackground(ctx, { x: time * 10, y: 0, w: W, h: H }, END_WORLD, time);
     const pulse = 0.5 + 0.5 * Math.sin(time * 1.5);
     const g = ctx.createRadialGradient(W / 2, H * 0.45, 20, W / 2, H * 0.45, W * 0.7);
     g.addColorStop(0, `rgba(255,180,90,${0.35 + pulse * 0.1})`); g.addColorStop(1, 'rgba(60,20,60,0.4)');
     ctx.fillStyle = g; ctx.fillRect(0, 0, W, H);
     ctx.textAlign = 'center'; ctx.textBaseline = 'middle';
-    titleText(ctx, 'The castle is lit', W / 2, H * 0.24, 58, true);
-    ctx.font = `italic 19px ${SERIF}`;
-    ctx.fillStyle = '#fbe9c8';
-    ctx.fillText('Wick made it, one drop of wax at a time.', W / 2, H * 0.35);
-    ctx.font = `700 26px ${SANS}`;
+    titleText(ctx, 'The castle is lit', W / 2, H * 0.19, 58, true);
+    // the payoff, a line at a time
+    const lines = [
+      'The festival lanterns glow again, all the way down to Market Row.',
+      'Wick made it, one drop of wax at a time.',
+    ];
+    if (meta.keepsakes > 0) {
+      lines.push(meta.keepsakes === 1 ? 'And brought one keepsake home from the road.'
+        : `And brought ${meta.keepsakes} keepsakes home from the road.`);
+    }
+    lines.forEach((line, i) => {
+      ctx.globalAlpha = clamp((time - 0.4 - i * 1.1) / 0.8, 0, 1);
+      ctx.font = `italic 19px ${SERIF}`;
+      ctx.fillStyle = i === 2 ? '#ffd690' : '#fbe9c8';
+      ctx.fillText(line, W / 2, H * 0.3 + i * 30);
+    });
+    ctx.globalAlpha = 1;
+    const sy = H * 0.3 + lines.length * 30 + 26;
+    ctx.font = `700 24px ${SANS}`;
     ctx.fillStyle = '#ffd690';
-    ctx.fillText(`Time  ${fmtTime(stats.time)}`, W / 2, H * 0.5);
-    ctx.fillText(`Deaths  ${stats.deaths}`, W / 2, H * 0.58);
+    ctx.fillText(`Time  ${fmtTime(stats.time)}     Deaths  ${stats.deaths}`, W / 2, sy);
     ctx.font = `16px ${SANS}`;
     ctx.fillStyle = 'rgba(251,233,200,0.8)';
-    ctx.fillText(`Wax drips placed: ${stats.drips}`, W / 2, H * 0.66);
+    ctx.fillText(`Wax drips placed: ${stats.drips}`, W / 2, sy + 34);
     const a = 0.55 + 0.45 * Math.sin(time * 3);
     ctx.font = `700 20px ${SANS}`;
-    const msg = device === 'touch' ? 'Tap to return to the title' : 'Press to return to the title';
+    const msg = device === 'touch' ? 'Tap to roll the credits' : 'Press any button to roll the credits';
     ctx.lineWidth = 5; ctx.lineJoin = 'round';
     ctx.strokeStyle = 'rgba(28,13,42,0.85)';
     ctx.strokeText(msg, W / 2, H * 0.82);
@@ -258,7 +331,7 @@ export const UI = {
   },
 
   // ---------------------------------------------------------------- level select
-  drawSelect(ctx, time, levels, reached, sel, device) {
+  drawSelect(ctx, time, levels, reached, sel, device, meta = null) {
     drawBackground(ctx, { x: time * 20, y: 0, w: W, h: H }, TITLE_WORLD, time);
     ctx.fillStyle = 'rgba(14,6,28,0.55)'; ctx.fillRect(0, 0, W, H);
     ctx.textAlign = 'center'; ctx.textBaseline = 'middle';
@@ -284,11 +357,24 @@ export const UI = {
       ctx.lineWidth = 2; ctx.stroke();
       ctx.font = `700 13px ${SANS}`;
       ctx.fillStyle = on ? '#2a1630' : open ? '#e8b03a' : 'rgba(200,180,200,0.45)';
-      ctx.fillText(`LEVEL ${i + 1}`, cx + cw / 2, cy + 20);
+      // with marks in the corner, the level number moves left to make room
+      const m = open && meta && meta.marks[i];
+      const hasMarks = m && (m.keepsake !== null || m.swift !== null || m.bright !== null);
+      if (hasMarks) { ctx.textAlign = 'left'; ctx.fillText(`LEVEL ${i + 1}`, cx + 12, cy + 20); ctx.textAlign = 'center'; }
+      else ctx.fillText(`LEVEL ${i + 1}`, cx + cw / 2, cy + 20);
       ctx.fillStyle = on ? '#2a1630' : open ? '#fbe9c8' : 'rgba(200,180,200,0.45)';
       fit(open ? L.name : 'Locked', 700, 17, SERIF, cy + 44, cx);
       ctx.fillStyle = on ? 'rgba(42,22,48,0.85)' : 'rgba(251,233,200,0.6)';
       if (open) fit(L.hint, 'italic', 12, SERIF, cy + 66, cx);
+      if (hasMarks) {
+        // keepsake / swift / bright, tucked into the top-right corner
+        let mx = cx + cw - 15;
+        for (const k of ['bright', 'swift', 'keepsake']) {
+          if (m[k] === null) continue;
+          drawMark(ctx, k, mx, cy + 19, 6.5, m[k], on ? '#2a1630' : '#1c0d2a');
+          mx -= 16;
+        }
+      }
       if (!open) {
         // a little padlock
         ctx.strokeStyle = 'rgba(200,180,200,0.45)'; ctx.lineWidth = 2;
@@ -304,32 +390,69 @@ export const UI = {
     ctx.strokeStyle = 'rgba(217,166,64,0.6)'; ctx.lineWidth = 2; ctx.stroke();
     ctx.font = `600 16px ${SANS}`; ctx.fillStyle = '#fbe9c8';
     ctx.fillText(device === 'gamepad' ? '\u24b7 Back' : device === 'touch' ? 'Back' : 'Esc  Back', W / 2, by + 19);
+    if (meta && (meta.kAll || meta.mAll)) {
+      const parts = [];
+      if (meta.kAll) parts.push(`keepsakes ${meta.kGot}/${meta.kAll}`);
+      if (meta.mAll) parts.push(`medals ${meta.mGot}/${meta.mAll}`);
+      ctx.font = `600 14px ${SANS}`; ctx.fillStyle = 'rgba(251,233,200,0.75)';
+      ctx.fillText(parts.join('  ·  '), W / 2, by + 60);
+    }
   },
 
   // ---------------------------------------------------------------- level complete card
-  drawCompleteCard(ctx, world, index, stats, shown, left) {
+  drawCompleteCard(ctx, world, index, stats, shown, left, res = null) {
     const a = clamp(Math.min((shown - 0.5) / 0.35, (left + 0.3) / 0.4), 0, 1);
     if (a <= 0) return;
     const rise = (1 - Math.min(1, (shown - 0.5) / 0.35)) * 24;
     ctx.save();
     ctx.globalAlpha = a;
     ctx.translate(0, rise);
-    const w = 380, h = 170, x = W / 2 - w / 2, y = H * 0.3;
+    const marks = res ? ['keepsake', 'swift', 'bright'].filter((k) => res[k] !== null) : [];
+    const w = marks.length ? 420 : 380, h = marks.length ? 212 : 170, x = W / 2 - w / 2, y = H * (marks.length ? 0.27 : 0.3);
     ctx.fillStyle = 'rgba(28,12,40,0.9)'; roundRect(ctx, x, y, w, h, 16); ctx.fill();
     ctx.strokeStyle = '#d9a640'; ctx.lineWidth = 2.5; ctx.stroke();
     ctx.textAlign = 'center'; ctx.textBaseline = 'middle';
     ctx.font = `700 14px ${SANS}`; ctx.fillStyle = '#e8b03a';
     ctx.fillText(`LEVEL ${index + 1} LIT`, W / 2, y + 26);
     titleText(ctx, world.name, W / 2, y + 60, 32);
-    const col = (cx, label, value) => {
+    const best = (res && res.best) || {};
+    const col = (cx, label, value, isBest) => {
       ctx.font = `600 12px ${SANS}`; ctx.fillStyle = 'rgba(251,233,200,0.65)';
       ctx.fillText(label, cx, y + 104);
       ctx.font = `700 22px ${SANS}`; ctx.fillStyle = '#ffd690';
-      ctx.fillText(value, cx, y + 132);
+      ctx.fillText(value, cx, y + 130);
+      if (isBest) {
+        ctx.font = `800 10px ${SANS}`;
+        ctx.fillStyle = `rgba(255,236,170,${0.75 + 0.25 * Math.sin(shown * 6)})`;
+        ctx.fillText('NEW BEST', cx, y + 151);
+      }
     };
-    col(W / 2 - 120, 'TIME', fmtTime(stats.time));
-    col(W / 2, 'WAX LEFT', `${Math.round(stats.wax)}%`);
-    col(W / 2 + 120, 'DEATHS', String(stats.deaths));
+    col(W / 2 - 130, 'TIME', fmtTime(stats.time), best.time);
+    col(W / 2, 'WAX LEFT', `${Math.round(stats.wax)}%`, best.wax);
+    col(W / 2 + 130, 'DEATHS', String(stats.deaths), best.deaths);
+    if (marks.length) {
+      // keepsake found/missed, and the par medals for this run
+      ctx.strokeStyle = 'rgba(217,166,64,0.35)'; ctx.lineWidth = 1;
+      ctx.beginPath(); ctx.moveTo(x + 24, y + 166); ctx.lineTo(x + w - 24, y + 166); ctx.stroke();
+      const par = res.par || {};
+      const label = {
+        keepsake: res.keepsake ? 'Keepsake found' : 'Keepsake missed',
+        swift: `Swift  ≤${fmtTime(par.time || 0)}`,
+        bright: `Bright  ≥${par.wax}%`,
+      };
+      const slot = w / marks.length;
+      marks.forEach((k, i) => {
+        const sx = x + slot * (i + 0.5);
+        ctx.font = `600 13px ${SANS}`;
+        const tw = ctx.measureText(label[k]).width;
+        const ix = sx - (tw + 24) / 2 + 9;
+        drawMark(ctx, k, ix, y + 189, 9, res[k]);
+        ctx.textAlign = 'left';
+        ctx.fillStyle = res[k] ? '#ffe2a0' : 'rgba(251,233,200,0.5)';
+        ctx.fillText(label[k], ix + 15, y + 190);
+        ctx.textAlign = 'center';
+      });
+    }
     ctx.restore();
   },
 
@@ -351,6 +474,12 @@ export const UI = {
     ctx.restore();
   },
 };
+
+const STORY_LINES = [
+  'Every year the castle torch lights the whole town.',
+  'Tonight it has gone out, and the town is dark.',
+  'So one small candle sets off to light it again.',
+];
 
 const TITLE_WORLD = { ambient: 0.78, pxH: H, data: {}, goal: null };
 const END_WORLD = { ambient: 0.9, pxH: H, data: { finale: true }, goal: { lit: true } };
@@ -390,4 +519,44 @@ function roundRect(ctx, x, y, w, h, r) {
   ctx.arcTo(x, y + h, x, y, r);
   ctx.arcTo(x, y, x + w, y, r);
   ctx.closePath();
+}
+
+// The three per-level marks, as little round badges: keepsake (paper lantern), swift (clock),
+// bright (flame). `on` fills them gold; off is a faint outline.
+export function drawMark(ctx, kind, x, y, r, on, ink = '#1c0d2a') {
+  ctx.save();
+  ctx.lineJoin = 'round'; ctx.lineCap = 'round';
+  ctx.beginPath(); ctx.arc(x, y, r, 0, Math.PI * 2);
+  ctx.fillStyle = on ? '#ffc65a' : 'rgba(28,13,42,0.55)';
+  ctx.fill();
+  ctx.lineWidth = Math.max(1.2, r * 0.18);
+  ctx.strokeStyle = on ? ink : 'rgba(251,233,200,0.45)';
+  ctx.stroke();
+  const fg = on ? ink : 'rgba(251,233,200,0.5)';
+  ctx.fillStyle = fg; ctx.strokeStyle = fg;
+  const k = r * 0.62;
+  ctx.beginPath();
+  if (kind === 'keepsake') {
+    // a tiny paper lantern, like the one in the level
+    ctx.lineWidth = Math.max(1, r * 0.13);
+    ctx.ellipse(x, y + k * 0.05, k * 0.7, k * 0.78, 0, 0, Math.PI * 2);
+    if (on) { ctx.fillStyle = '#e0587a'; ctx.fill(); }
+    ctx.stroke();
+    ctx.fillStyle = fg;
+    ctx.fillRect(x - k * 0.4, y - k * 0.98, k * 0.8, k * 0.28);
+    ctx.fillRect(x - k * 0.32, y + k * 0.78, k * 0.64, k * 0.24);
+  } else if (kind === 'swift') {
+    ctx.lineWidth = Math.max(1, r * 0.15);
+    ctx.arc(x, y, k, 0, Math.PI * 2);
+    ctx.moveTo(x, y); ctx.lineTo(x, y - k * 0.7);
+    ctx.moveTo(x, y); ctx.lineTo(x + k * 0.55, y + k * 0.2);
+    ctx.stroke();
+  } else {
+    ctx.moveTo(x, y - k * 1.05);
+    ctx.bezierCurveTo(x + k * 0.9, y - k * 0.1, x + k * 0.75, y + k * 0.85, x, y + k * 0.85);
+    ctx.bezierCurveTo(x - k * 0.75, y + k * 0.85, x - k * 0.9, y - k * 0.1, x, y - k * 1.05);
+    ctx.closePath();
+    on ? ctx.fill() : (ctx.lineWidth = Math.max(1, r * 0.15), ctx.stroke());
+  }
+  ctx.restore();
 }

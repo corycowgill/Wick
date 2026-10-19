@@ -95,6 +95,79 @@ function finishedGame() {
   storeProgress(d);
 }
 
+// Personal bests, also by level name: { v, story, levels: { [name]: { time, wax, deaths,
+// keepsake, swift, bright } } }. Kept in memory and written through on change.
+let records = null;
+function loadRecords() {
+  if (records) return records;
+  try { records = JSON.parse(localStorage.getItem('wick.records') || 'null'); } catch { /* storage blocked */ }
+  if (!records || typeof records !== 'object' || typeof records.levels !== 'object' || !records.levels) records = { v: 1, story: false, levels: {} };
+  return records;
+}
+function storeRecords() {
+  try { localStorage.setItem('wick.records', JSON.stringify(loadRecords())); } catch { /* storage blocked */ }
+}
+
+// whether each level has a keepsake and a par, probed once from a throwaway world
+const levelInfoCache = [];
+function levelInfo(i) {
+  if (!levelInfoCache[i]) {
+    let keepsake = false, par = LEVELS[i].par || null;
+    try { const w = createWorld(LEVELS[i]); keepsake = !!w.keepsake; par = (w.data && w.data.par) || par; } catch { /* bad level: no marks */ }
+    levelInfoCache[i] = { keepsake, par };
+  }
+  return levelInfoCache[i];
+}
+
+// the three marks per level for the select screen, plus the overall tally
+function selectMarks() {
+  const recs = loadRecords().levels;
+  let kGot = 0, kAll = 0, mGot = 0, mAll = 0;
+  const marks = LEVELS.map((L, i) => {
+    const info = levelInfo(i), r = recs[L.name] || {};
+    const m = {
+      keepsake: info.keepsake ? !!r.keepsake : null,
+      swift: info.par && info.par.time != null ? !!r.swift || (r.time != null && r.time <= info.par.time) : null,
+      bright: info.par && info.par.wax != null ? !!r.bright || (r.wax != null && r.wax >= info.par.wax) : null,
+    };
+    if (m.keepsake !== null) { kAll++; if (m.keepsake) kGot++; }
+    for (const k of ['swift', 'bright']) if (m[k] !== null) { mAll++; if (m[k]) mGot++; }
+    return m;
+  });
+  return { marks, kGot, kAll, mGot, mAll };
+}
+
+// compares this clear against the saved bests, saves, and returns what the card should show
+function recordClear(world, stats) {
+  const recs = loadRecords();
+  const prev = recs.levels[world.name] || {};
+  const time = stats.time, wax = Math.round(stats.wax), deaths = stats.deaths;
+  const par = (world.data && world.data.par) || null;
+  const hasKeepsake = !!world.keepsake, gotKeepsake = !!(world.keepsake && world.keepsake.got);
+  const res = {
+    best: {
+      time: prev.time != null && time < prev.time,
+      wax: prev.wax != null && wax > prev.wax,
+      deaths: prev.deaths != null && deaths < prev.deaths,
+    },
+    keepsake: hasKeepsake ? gotKeepsake : null,
+    swift: par && par.time != null ? time <= par.time : null,
+    bright: par && par.wax != null ? wax >= par.wax : null,
+    par,
+  };
+  if (state.replay) return res;   // bot replays don't touch the player's bests
+  recs.levels[world.name] = {
+    time: prev.time != null ? Math.min(prev.time, time) : time,
+    wax: prev.wax != null ? Math.max(prev.wax, wax) : wax,
+    deaths: prev.deaths != null ? Math.min(prev.deaths, deaths) : deaths,
+    keepsake: !!prev.keepsake || gotKeepsake,
+    swift: !!prev.swift || !!res.swift,
+    bright: !!prev.bright || !!res.bright,
+  };
+  storeRecords();
+  return res;
+}
+
 // ---------------------------------------------------------------- canvas sizing
 function resize() {
   const vw = window.innerWidth, vh = window.innerHeight;
@@ -183,6 +256,16 @@ Events.on('pickup', (e) => {
   P.ring(e.x, e.y, 80);
   P.homing(e.x, e.y, state.player, 16);
 });
+Events.on('keepsake', (e) => {
+  wickMood('joy', 1);
+  Audio.sfx('pickup');
+  Audio.sfx('bell');
+  P.sparks(e.x, e.y, 18, 170, '255,225,130');
+  P.ring(e.x, e.y, 110, '255,215,140');
+  P.homing(e.x, e.y, state.player, 10, '255,225,150');
+  state.keepsakePop = 1;
+  UI.toast('Keepsake found!', 2.2);
+});
 Events.on('blobLand', (e) => { P.splat(e.x, e.y - 4, 6); P.dust(e.x, e.y, 4, 0.5); });
 Events.on('ignite', (e) => { Audio.sfx('ignite'); P.sparks(e.x, e.y, 6, 90); });
 Events.on('plate', (e) => { Audio.sfx('plate', { down: e.down }); if (e.down) P.dust(e.x, e.y, 4, 0.4); });
@@ -220,6 +303,7 @@ Events.on('levelComplete', (e) => {
   state.completeTimer = CFG.GOAL_DELAY + 0.9 + (state.world.data.finale ? 1.5 : 0);
   state.completeMax = state.completeTimer;
   state.levelStats.wax = state.player.wax;
+  try { state.levelResult = recordClear(state.world, state.levelStats); } catch { state.levelResult = null; }
   Input.gamepad.rumble('relight');
 });
 
@@ -244,11 +328,29 @@ function startLevel(i) {
   Audio.ambience(themeOf(state.world).rain ? 'rain' : null);
   state.gusts = new Map();
   state.levelStats = { time: 0, deaths: 0, wax: 0 };
+  state.levelResult = null;
+  state.keepsakePop = 0;
 }
 
 function newGame(i = 0) {
   state.stats = { time: 0, deaths: 0, drips: 0 };
   startLevel(i);
+}
+
+// the Lantern Festival intro, once per save, before Market Row (never in test runs)
+function startFromTitle(i) {
+  if (i === 0 && !DEBUG && !loadRecords().story && reachedSet().size <= 1) {
+    state.scene = 'story';
+    state.storyAt = state.time;
+    state.tap = null;
+    return;
+  }
+  newGame(i);
+}
+function endStory() {
+  loadRecords().story = true;
+  storeRecords();
+  newGame(0);
 }
 
 function toCredits() {
@@ -272,7 +374,7 @@ function titleItems() {
   const i = progressIndex();
   const items = [];
   if (i > 0) items.push({ label: `Continue: ${LEVELS[i].name}`, act: () => newGame(i) });
-  items.push({ label: i > 0 ? 'New game' : 'Start', act: () => newGame(0) });
+  items.push({ label: i > 0 ? 'New game' : 'Start', act: () => (i > 0 ? newGame(0) : startFromTitle(0)) });
   if (reachedSet().size > 1) items.push({ label: 'Choose level', act: () => { state.scene = 'select'; state.sel = i; } });
   items.push({ label: 'Credits', act: () => toCredits() });
   return items;
@@ -340,6 +442,12 @@ function update(dt) {
     if (pick >= 0) {
       if (reached.has(LEVELS[pick].name)) { Audio.sfx('select'); newGame(pick); } else Audio.sfx('dripFail');
     }
+    return;
+  }
+
+  if (state.scene === 'story') {
+    // any press skips straight into Market Row
+    if (state.time > state.storyAt + 0.4 && (input.anyPressed || state.tap)) { state.tap = null; Audio.sfx('select'); endStory(); }
     return;
   }
 
@@ -454,6 +562,7 @@ function update(dt) {
   state.levelCard = Math.max(0, state.levelCard - dt);
   state.flash = Math.max(0, state.flash - dt * 2.2);
   state.hudFail = Math.max(0, (state.hudFail || 0) - dt * 2.5);
+  state.keepsakePop = Math.max(0, (state.keepsakePop || 0) - dt * 1.5);
   Input.touch.setEnabled('drip', player.canAffordDrip());
   if (player.alive) state.iris = Math.min(1, state.iris + dt * 3);
   Audio.setFlame(player.waxFrac(), player.alive);
@@ -470,9 +579,12 @@ function render() {
       menu: state.titleMenu ? titleItems().map((it) => it.label) : null, selected: state.sel, standalone: state.standalone,
     });
   } else if (state.scene === 'select') {
-    UI.drawSelect(ctx, t, LEVELS, reachedSet(), state.sel, Input.lastDevice);
+    UI.drawSelect(ctx, t, LEVELS, reachedSet(), state.sel, Input.lastDevice, selectMarks());
+  } else if (state.scene === 'story') {
+    UI.drawStory(ctx, t - state.storyAt, Input.lastDevice);
   } else if (state.scene === 'end') {
-    UI.drawEnd(ctx, t, state.stats, Input.lastDevice);
+    const m = selectMarks();
+    UI.drawEnd(ctx, t, state.stats, Input.lastDevice, { keepsakes: m.kGot, keepsakeTotal: m.kAll });
   } else if (state.scene === 'credits') {
     if (!UI.drawCredits(ctx, t, state.creditScroll, Input.lastDevice)) state.creditsDone = true;
   } else {
@@ -548,13 +660,16 @@ function renderPlay(t) {
   }
   Lighting.coldVignette(ctx, player.waxFrac(), t);
   Post.finish(ctx, themeOf(world).name, t);
-  UI.drawHUD(ctx, player, t, { muted: Audio.muted, touch: Input.lastDevice === 'touch', fail: state.hudFail });
+  UI.drawHUD(ctx, player, t, {
+    muted: Audio.muted, touch: Input.lastDevice === 'touch', fail: state.hudFail,
+    keepsake: world.keepsake ? !!world.keepsake.got : null, keepsakePop: state.keepsakePop,
+  });
   if (state.levelCard > 0) UI.drawLevelCard(ctx, world, state.levelIndex, CFG.LEVEL_CARD_TIME - state.levelCard);
   if (state.completeTimer > 0) {
     const k = Math.max(0, 1 - state.completeTimer / 0.6);
     if (k > 0) { ctx.fillStyle = `rgba(14,6,28,${k})`; ctx.fillRect(0, 0, W, H); }
     const shown = state.completeMax - state.completeTimer;
-    if (!world.data.finale) UI.drawCompleteCard(ctx, world, state.levelIndex, state.levelStats, shown, state.completeTimer);
+    if (!world.data.finale) UI.drawCompleteCard(ctx, world, state.levelIndex, state.levelStats, shown, state.completeTimer, state.levelResult);
   }
   if (state.iris < 1) Post.iris(ctx, state.iris, player.cx - cam.x, player.y + player.h / 2 - cam.y);
   if (state.paused && !state.rotateBlock) {
@@ -655,7 +770,7 @@ if (params.has('level')) {
   }
 }
 window.WICK = {
-  state, LEVELS, startLevel, Lighting, Audio,
+  state, LEVELS, startLevel, Lighting, Audio, records: loadRecords,
   // restart `level` and drive it with recorded inputs from the very first frame
   replay(level, frames, speed = 1) {
     newGame(level);

@@ -9,6 +9,7 @@ export class Torch {
     this.x = x; this.y = y;          // center x, floor y
     this.lit = false;
     this.litTime = 0;
+    this.floor = CFG.RESPAWN_MIN;    // least wax a respawn here gives (level.js sets it per torch)
     this.rect = { x: x - 16, y: y - 72, w: 32, h: 72 };
   }
   get light() {
@@ -22,7 +23,7 @@ export class Torch {
       this.lit = true;
       this.litTime = 0;
       player.refill(CFG.TORCH_REFILL);
-      world.checkpoint = { x: this.x, y: this.y, wax: player.wax };
+      world.checkpoint = { x: this.x, y: this.y, wax: player.wax, floor: this.floor };
       Events.emit('relight', { x: this.x, y: this.y - 58, entity: this });
     }
   }

@@ -388,7 +388,7 @@ function analyse(world, theme) {
   // small decorations on walkable surfaces, vines on cliff faces, lanterns under ceilings
   const busy = new Set();
   const mark = (x, y) => busy.add(Math.floor(y / T - 0.5) * w + Math.floor(x / T));
-  for (const e of world.entities) if (e.type === 'torch' || e.type === 'pumpkin' || e.type === 'goal') {
+  for (const e of world.entities) if (e.type === 'torch' || e.type === 'pumpkin' || e.type === 'goal' || e.type === 'keepsake') {
     mark(e.x, e.y); mark(e.x - T, e.y); mark(e.x + T, e.y);
   }
   for (const s of world.signs) mark(s.px, s.py);
@@ -907,6 +907,7 @@ export function drawEntities(ctx, cam, world, time) {
     switch (e.type) {
       case 'torch': if (inView(e.x, e.y)) drawTorch(ctx, e, time); break;
       case 'pumpkin': if (inView(e.x, e.y)) drawPumpkin(ctx, e, time); break;
+      case 'keepsake': if (inView(e.x, e.y)) drawKeepsake(ctx, e, time); break;
       case 'goal': if (inView(e.x, e.y, 200)) drawGoal(ctx, e, time); break;
       case 'drip': if (inView(e.x, e.y, 300)) drawDrips(ctx, e); break;
       case 'cobweb': if (inView(e.x, e.y)) drawCobweb(ctx, e, time); break;
@@ -954,6 +955,86 @@ function drawPumpkin(ctx, e, time) {
   ctx.beginPath(); ctx.moveTo(x + 9, cy - 2); ctx.lineTo(x + 5, cy - 7); ctx.lineTo(x + 2, cy - 2); ctx.fill();
   ctx.beginPath(); ctx.moveTo(x - 9, cy + 3); ctx.lineTo(x - 5, cy + 6); ctx.lineTo(x, cy + 4); ctx.lineTo(x + 5, cy + 6);
   ctx.lineTo(x + 9, cy + 3); ctx.lineTo(x, cy + 8); ctx.closePath(); ctx.fill();
+}
+
+// Keepsake: a tiny festival paper lantern with ribbon tails, bobbing on its own
+// little breeze. Rose paper and a twinkle so it reads as optional treasure, not
+// wax (pumpkins) or a checkpoint (torches). On pickup it pops upward and fades.
+const KEEP_POP = 0.7;
+function keepsakePose(e, time) {
+  const t = e.t || 0;
+  if (e.got) {
+    const k = clamp(t / KEEP_POP, 0, 1);
+    return { k, x: e.x, y: e.y - 20 - 26 * (1 - (1 - k) ** 2), s: 1 + 0.5 * k, a: 1 - k * k };
+  }
+  return { k: 0, x: e.x, y: e.y - 20 + Math.sin(time * 2.2 + e.x * 0.05) * 2.5, s: 1, a: 1 };
+}
+
+function drawKeepsake(ctx, e, time) {
+  const p = keepsakePose(e, time);
+  if (p.a <= 0.01) return;
+  const sway = e.got ? 0 : Math.sin(time * 1.7 + e.x) * 0.12;
+  ctx.save();
+  ctx.globalAlpha = p.a;
+  ctx.translate(p.x, p.y);
+  ctx.rotate(sway);
+  ctx.scale(p.s, p.s);
+  // string and ribbon tails
+  ctx.strokeStyle = OUT; ctx.lineWidth = 1;
+  ctx.beginPath(); ctx.moveTo(0, -13); ctx.lineTo(0, -9); ctx.stroke();
+  const flut = Math.sin(time * 4 + e.x) * 2;
+  ctx.lineCap = 'round'; ctx.lineWidth = 2;
+  for (const [s, c] of [[-1, '#5ec8c0'], [1, '#e8b03a']]) {
+    ctx.strokeStyle = c;
+    ctx.beginPath(); ctx.moveTo(s * 1.5, 9);
+    ctx.quadraticCurveTo(s * 4 + flut * s, 13, s * 2 + flut, 17); ctx.stroke();
+  }
+  // paper body
+  ctx.fillStyle = '#e0587a'; ctx.strokeStyle = OUT; ctx.lineWidth = 1.8;
+  ctx.beginPath(); ctx.ellipse(0, 0, 8, 8.5, 0, 0, 6.283); ctx.fill(); ctx.stroke();
+  ctx.fillStyle = `rgba(255,${200 + 30 * Math.sin(time * 6 + e.x) | 0},150,0.85)`;
+  ctx.beginPath(); ctx.ellipse(0, 0.5, 4.2, 6, 0, 0, 6.283); ctx.fill();
+  ctx.strokeStyle = 'rgba(120,20,50,0.55)'; ctx.lineWidth = 1;
+  ctx.beginPath(); ctx.ellipse(0, 0, 4.5, 8.3, 0, 0, 6.283); ctx.moveTo(-8, 0); ctx.lineTo(8, 0); ctx.stroke();
+  // gold caps
+  ctx.fillStyle = '#e8b03a'; ctx.strokeStyle = OUT; ctx.lineWidth = 1.2;
+  ctx.fillRect(-4.5, -10.5, 9, 3); ctx.strokeRect(-4.5, -10.5, 9, 3);
+  ctx.fillRect(-3.5, 7.5, 7, 2.5); ctx.strokeRect(-3.5, 7.5, 7, 2.5);
+  ctx.fillStyle = 'rgba(255,255,255,0.55)'; ctx.fillRect(-5, -4, 1.5, 4);
+  ctx.restore();
+}
+
+// additive: soft rose glow, an orbiting twinkle, and a sparkle burst on pickup
+function drawKeepsakeGlows(ctx, cam, world, time) {
+  for (const e of world.entities) {
+    if (e.type !== 'keepsake') continue;
+    if (e.x < cam.x - 80 || e.x > cam.x + cam.w + 80) continue;
+    const p = keepsakePose(e, time);
+    if (p.a <= 0.01) continue;
+    const r = 30 + 10 * p.k;
+    const g = ctx.createRadialGradient(p.x, p.y, 0, p.x, p.y, r);
+    g.addColorStop(0, `rgba(255,150,170,${(0.32 + 0.06 * Math.sin(time * 3 + e.x)) * p.a})`);
+    g.addColorStop(1, 'rgba(255,120,160,0)');
+    ctx.fillStyle = g; ctx.fillRect(p.x - r, p.y - r, r * 2, r * 2);
+    const star = (x, y, s, a) => {
+      ctx.fillStyle = `rgba(255,244,210,${a})`;
+      ctx.beginPath();
+      ctx.moveTo(x, y - s); ctx.lineTo(x + s * 0.25, y - s * 0.25); ctx.lineTo(x + s, y); ctx.lineTo(x + s * 0.25, y + s * 0.25);
+      ctx.lineTo(x, y + s); ctx.lineTo(x - s * 0.25, y + s * 0.25); ctx.lineTo(x - s, y); ctx.lineTo(x - s * 0.25, y - s * 0.25);
+      ctx.closePath(); ctx.fill();
+    };
+    if (!e.got) {
+      // one twinkle drifting round the lantern, flaring now and then
+      const a = time * 1.3 + e.x;
+      const tw = Math.max(0, Math.sin(time * 2.6 + e.x * 0.3));
+      star(p.x + Math.cos(a) * 13, p.y + Math.sin(a) * 9 - 2, 2 + 3 * tw * tw, 0.35 + 0.6 * tw);
+    } else {
+      for (let i = 0; i < 8; i++) {
+        const ang = i / 8 * 6.283 + 0.3, d = 6 + 34 * p.k;
+        star(p.x + Math.cos(ang) * d, p.y + Math.sin(ang) * d, 3.5 * (1 - p.k) + 1, 0.9 * (1 - p.k));
+      }
+    }
+  }
 }
 
 function drawGoal(ctx, e, time) {
@@ -1426,6 +1507,7 @@ export function drawTrees(ctx, cam, world) {
 // ------------------------------------------------------------ light on the world
 // Soft shadow under Wick while airborne: shows exactly where you will land.
 export function drawJumpShadow(ctx, world, player) {
+  drawJumpNotch(ctx, player);
   if (!player.alive || player.onGround) return;
   const tx = Math.floor(player.cx / T);
   let ty = Math.floor(player.feet / T);
@@ -1437,9 +1519,70 @@ export function drawJumpShadow(ctx, world, player) {
   ctx.beginPath(); ctx.ellipse(player.cx, gy, 6 + 9 * k, 2 + 1.5 * k, 0, 0, 6.283); ctx.fill();
 }
 
+// How high a full held jump lifts Wick's feet right now. Steps the same integrator
+// as Player.update (hang time, discrete frames) so the notch matches the real apex.
+const apexCache = { wax: -1, px: 0 };
+function jumpApexPx(player) {
+  if (apexCache.wax === player.wax) return apexCache.px;
+  const dt = CFG.STEP, g = CFG.GRAVITY;
+  let vy = -player.jumpVelocity(), y = 0, top = 0;
+  for (let i = 0; i < 120 && vy < 0; i++) {
+    vy += (Math.abs(vy) < CFG.APEX_HANG_VEL ? g * CFG.APEX_HANG_MULT : g) * dt;
+    y += vy * dt;
+    if (y < top) top = y;
+  }
+  apexCache.wax = player.wax; apexCache.px = -top;
+  return -top;
+}
+
+// Jump-height notch: two small brackets at the apex of a full jump, shown while
+// Wick stands still (and briefly after landing). Wax is jump height, so the notch
+// sinks as Wick melts; once a two-tile step is out of reach it turns amber.
+// Render-only state: never touches the simulation.
+const notch = { a: 0, land: 0, ground: true, last: 0 };
+function drawJumpNotch(ctx, player) {
+  const now = performance.now() / 1000;
+  const dt = clamp(now - notch.last, 0, 0.1);
+  notch.last = now;
+  const grounded = player.alive && player.onGround;
+  if (grounded && !notch.ground) notch.land = 0.9;
+  notch.ground = grounded;
+  notch.land = Math.max(0, notch.land - dt);
+  const speed = Math.abs(player.vx) + Math.abs(player.windVx || 0);
+  let target = 0;
+  if (grounded) target = Math.max(clamp(1 - (speed - 30) / 140, 0, 1), notch.land > 0 ? 0.55 * Math.min(1, notch.land * 3) : 0);
+  notch.a += (target - notch.a) * Math.min(1, dt * (target > notch.a ? 5 : 9));
+  if (notch.a < 0.02) return;
+
+  const apex = jumpApexPx(player);
+  const short = apex + CFG.LEDGE_ASSIST < 2 * T;
+  const y = Math.round(player.feet - apex) + 0.5, cx = player.cx;
+  const pulse = short ? 0.75 + 0.25 * Math.sin(now * 5) : 1;
+  const a = notch.a * pulse;
+  const col = short ? '255,150,60' : '255,236,190';
+  ctx.save();
+  ctx.lineCap = 'round';
+  for (const s of [-1, 1]) {
+    const x0 = cx + s * 15, x1 = cx + s * 27;
+    // dark under-stroke so it reads on bright walls too
+    ctx.strokeStyle = `rgba(20,8,30,${0.55 * a})`; ctx.lineWidth = 4;
+    ctx.beginPath(); ctx.moveTo(x1, y + 3); ctx.lineTo(x1, y); ctx.lineTo(x0, y); ctx.stroke();
+    ctx.strokeStyle = `rgba(${col},${0.95 * a})`; ctx.lineWidth = 2;
+    ctx.beginPath(); ctx.moveTo(x1, y + 3); ctx.lineTo(x1, y); ctx.lineTo(x0, y); ctx.stroke();
+  }
+  // a faint dotted guide between the brackets, above the flame
+  ctx.fillStyle = `rgba(${col},${0.5 * a})`;
+  for (let x = cx - 9; x <= cx + 9; x += 6) ctx.fillRect(x - 1, y - 0.5, 2, 1);
+  ctx.restore();
+}
+
 // Torchlight catching the world: warm rim light on edges facing a flame, and
 // pools of light on the floor beneath flames. Drawn additively after the darkness.
 export function drawLightDetail(ctx, cam, world, lights, time) {
+  ctx.save();
+  ctx.globalCompositeOperation = 'lighter';
+  drawKeepsakeGlows(ctx, cam, world, time);
+  ctx.restore();
   const lit = lights.filter((l) => !l.dim && l.x > cam.x - l.r && l.x < cam.x + cam.w + l.r && l.y > cam.y - l.r && l.y < cam.y + cam.h + l.r);
   if (!lit.length) return;
   ctx.save();

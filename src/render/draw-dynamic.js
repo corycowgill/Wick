@@ -77,32 +77,56 @@ export function drawMovers(ctx, cam, world, t) {
   }
 }
 
+// Where Wick is this frame (set by drawWick), so moths can read as a threat up
+// close. Render-only: never fed back into the simulation.
+const wick = { x: 0, y: 0, on: false };
+export function noteWick(p) {
+  wick.on = !!(p && p.alive);
+  if (wick.on) { wick.x = p.cx; wick.y = p.y + p.h * 0.4; }
+}
+const DANGER = 120;
+function nearWick(m) {
+  if (!wick.on) return 0;
+  const d = Math.hypot(m.x - wick.x, m.y - wick.y);
+  return d >= DANGER ? 0 : 1 - d / DANGER;
+}
+
+// Moths: dusky wings with ember eyespots and glowing red eyes. Charming, but a
+// hazard: they steal wax. Decorative moths in theme scenes are tiny silhouettes.
 function drawMothBody(ctx, m, t) {
   const flap = Math.abs(Math.sin(t * 26 + m.phase0 * 7));
+  const near = nearWick(m);
   ctx.save();
   ctx.translate(m.x, m.y);
   ctx.scale(m.facing * 1.6, 1.6);
-  // wings: upper pair and lower pair, flapping
-  ctx.fillStyle = 'rgba(222,206,176,0.9)';
+  // wings: upper pair and lower pair, flapping, with a warm rim
+  ctx.lineWidth = 0.9;
+  ctx.strokeStyle = `rgba(232,${120 - near * 50 | 0},70,${0.75 + near * 0.25})`;
+  ctx.fillStyle = '#6a4a52';
   for (const s of [-1, 1]) {
     ctx.beginPath();
     ctx.ellipse(-2, s * 5 * flap, 9, 5 * (0.35 + flap * 0.65), s * 0.5, 0, 6.283);
-    ctx.fill();
+    ctx.fill(); ctx.stroke();
   }
-  ctx.fillStyle = 'rgba(176,156,126,0.9)';
+  ctx.fillStyle = '#4a3040';
   for (const s of [-1, 1]) {
     ctx.beginPath();
     ctx.ellipse(-6, s * 3 * flap, 5, 3.5 * (0.35 + flap * 0.65), s * 0.9, 0, 6.283);
-    ctx.fill();
+    ctx.fill(); ctx.stroke();
   }
-  // eye spots
-  ctx.fillStyle = 'rgba(90,60,50,0.8)';
-  ctx.beginPath(); ctx.arc(0, -4 * flap, 1.5, 0, 6.283); ctx.arc(0, 4 * flap, 1.5, 0, 6.283); ctx.fill();
+  // ember eyespots on the wings
+  ctx.fillStyle = 'rgba(255,140,60,0.9)';
+  ctx.beginPath(); ctx.arc(-2, -4.5 * flap, 1.8, 0, 6.283); ctx.arc(-2, 4.5 * flap, 1.8, 0, 6.283); ctx.fill();
+  ctx.fillStyle = '#2a1420';
+  ctx.beginPath(); ctx.arc(-2, -4.5 * flap, 0.8, 0, 6.283); ctx.arc(-2, 4.5 * flap, 0.8, 0, 6.283); ctx.fill();
   // body + feelers
-  ctx.fillStyle = '#5a4636';
+  ctx.fillStyle = '#2e1c26';
   ctx.beginPath(); ctx.ellipse(0, 0, 6, 2.6, 0, 0, 6.283); ctx.fill();
-  ctx.strokeStyle = '#5a4636'; ctx.lineWidth = 1;
+  ctx.strokeStyle = '#2e1c26'; ctx.lineWidth = 1;
   ctx.beginPath(); ctx.moveTo(5, -1); ctx.quadraticCurveTo(9, -5, 11, -6); ctx.moveTo(5, 1); ctx.quadraticCurveTo(9, 5, 11, 6); ctx.stroke();
+  // hungry red eyes
+  ctx.fillStyle = '#ff4a3a';
+  ctx.beginPath(); ctx.arc(5, -1.3, 1.1, 0, 6.283); ctx.arc(5, 1.3, 1.1, 0, 6.283); ctx.fill();
   ctx.restore();
 }
 
@@ -113,16 +137,65 @@ export function drawMoths(ctx, cam, world, t) {
   }
 }
 
-// additive pass: a dusty halo so moths read in the dark
+// dotted hint of a moth's route (orbit or line), fading in as Wick nears it
+function drawMothRoute(ctx, m, t) {
+  let d;
+  if (m.path === 'line') {
+    const vx = m.bx - m.ax, vy = m.by - m.ay, l2 = vx * vx + vy * vy || 1;
+    const u = Math.max(0, Math.min(1, ((wick.x - m.ax) * vx + (wick.y - m.ay) * vy) / l2));
+    d = Math.hypot(m.ax + vx * u - wick.x, m.ay + vy * u - wick.y);
+  } else {
+    d = Math.abs(Math.hypot(wick.x - m.cx, (wick.y - m.cy) / 0.6) - m.r) * 0.8;
+  }
+  const k = Math.max(0, Math.min(1, 1 - (d - 40) / 170));
+  if (k <= 0) return;
+  ctx.fillStyle = `rgba(255,120,80,${0.5 * k})`;
+  const N = m.path === 'line' ? Math.max(6, Math.round(Math.hypot(m.bx - m.ax, m.by - m.ay) / 14)) : Math.max(16, Math.round(m.r * 0.3));
+  const drift = (t * 0.6) % 1;
+  for (let i = 0; i < N; i++) {
+    let x, y;
+    if (m.path === 'line') {
+      const u = (i + drift) / N;
+      x = m.ax + (m.bx - m.ax) * u; y = m.ay + (m.by - m.ay) * u;
+    } else {
+      const a = (i + drift) / N * 6.283;
+      x = m.cx + Math.cos(a) * m.r; y = m.cy + Math.sin(a) * m.r * 0.6 + Math.sin(a * 3) * 5;
+    }
+    ctx.beginPath(); ctx.arc(x, y, 1.6, 0, 6.283); ctx.fill();
+  }
+}
+
+// additive pass: an ember-dusty halo so moths read in the dark, a red warning
+// pulse when one is close to Wick, and their routes when Wick is nearby
 export function drawMothGlows(ctx, cam, world, t) {
   for (const m of world.moths) {
+    const span = m.path === 'line' ? Math.abs(m.bx - m.ax) / 2 + 60 : (m.r || 0) + 60;
+    const mx = m.path === 'line' ? (m.ax + m.bx) / 2 : m.cx;
+    if (wick.on && mx + span > cam.x && mx - span < cam.x + cam.w) drawMothRoute(ctx, m, t);
     if (m.x < cam.x - 60 || m.x > cam.x + cam.w + 60) continue;
     const g = ctx.createRadialGradient(m.x, m.y, 0, m.x, m.y, 40);
-    const a = 0.3 + 0.08 * Math.sin(t * 7 + m.phase0);
-    g.addColorStop(0, `rgba(255,236,200,${a})`);
-    g.addColorStop(1, 'rgba(255,236,200,0)');
+    const a = 0.26 + 0.07 * Math.sin(t * 7 + m.phase0);
+    g.addColorStop(0, `rgba(255,190,140,${a})`);
+    g.addColorStop(1, 'rgba(255,150,110,0)');
     ctx.fillStyle = g;
     ctx.fillRect(m.x - 40, m.y - 40, 80, 80);
+    // red eye glints that cut through the dark
+    const ex = m.x + m.facing * 8;
+    ctx.fillStyle = 'rgba(255,80,60,0.7)';
+    ctx.beginPath(); ctx.arc(ex, m.y, 2.6, 0, 6.283); ctx.fill();
+    const near = nearWick(m);
+    if (near > 0) {
+      const pulse = 0.7 + 0.3 * Math.sin(t * 12 + m.phase0);
+      const r = 22 + 6 * pulse;
+      ctx.strokeStyle = `rgba(255,70,50,${0.75 * near * pulse})`;
+      ctx.lineWidth = 2;
+      ctx.beginPath(); ctx.arc(m.x, m.y, r, 0, 6.283); ctx.stroke();
+      const h = ctx.createRadialGradient(m.x, m.y, 8, m.x, m.y, r + 8);
+      h.addColorStop(0, `rgba(255,60,40,${0.3 * near})`);
+      h.addColorStop(1, 'rgba(255,60,40,0)');
+      ctx.fillStyle = h;
+      ctx.fillRect(m.x - r - 8, m.y - r - 8, (r + 8) * 2, (r + 8) * 2);
+    }
   }
 }
 

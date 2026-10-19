@@ -1,6 +1,7 @@
 // Wick: a chubby candle-cat. The face stays the same size while the body
 // melts down, so a tiny Wick looks extra cute and desperate.
 import { CFG, clamp } from '../config.js';
+import { noteWick } from './draw-dynamic.js';
 
 const OUTLINE = '#2a1630';
 const WAX = '#f6e6c4';
@@ -22,6 +23,7 @@ export function drawWick(ctx, p, time, opts = {}) {
   const w = p.w, h = p.h;
   const cx = p.x + w / 2, fy = p.y + h;
   const facing = p.facing || 1;
+  if (opts.world) noteWick(p);
   ctx.save();
   ctx.translate(cx, fy);
   if (opts.scale) ctx.scale(opts.scale, opts.scale);

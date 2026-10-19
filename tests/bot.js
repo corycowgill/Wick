@@ -125,8 +125,9 @@ const jumpDrip = (d, at) => (p, w, f) => {
   return inp({ jumpPressed: f === 0, jumpHeld: true, moveX: d, dripPressed: f === at });
 };
 
-export function programs({ drip = true, hazards = false, puzzle = false } = {}) {
+export function programs({ drip = true, hazards = false, puzzle = false, soaking = false } = {}) {
   const list = [];
+  if (soaking && !puzzle && drip) list.push(['soak', soak(), 0]);
   if (puzzle && drip) {
     list.push(['soak', soak(), 0]);
     for (const d of [-1, 1]) {
@@ -170,7 +171,8 @@ function standingOnPermanent(p, w, blobsOk = false) {
 }
 
 // Search a level. opts: { drip, start: {x, feet, wax}, litTorches: [idx], takenPumpkins: [idx],
-// target: 'goal' | 'nextTorch', maxStates }
+// target: 'goal' | 'nextTorch' | 'keepsake', maxStates }. Each state's ks says whether the
+// keepsake has been found; with needKeepsake the goal only counts once it has.
 export function search(levelData, opts = {}) {
   Events.muted = true;
   const world = createWorld(levelData);
@@ -190,8 +192,9 @@ export function search(levelData, opts = {}) {
   player.refill = (a) => { if (a === CFG.TORCH_REFILL) arrivalWax = player.wax; origRefill(a); };
   // plate levels: blobs are part of the puzzle state, so they carry between moves
   const PUZZLE = world.plates.length > 0;
-  const CARRY = !!opts.record || PUZZLE;
-  const progs = programs({ drip: opts.drip !== false, hazards: CLOCKED, puzzle: PUZZLE });
+  // soak: also try soaking blobs back up (blobs then carry between moves)
+  const CARRY = !!opts.record || PUZZLE || !!opts.soak;
+  const progs = programs({ drip: opts.drip !== false, hazards: CLOCKED, puzzle: PUZZLE, soaking: !!opts.soak });
   const nT = world.torches.length, nP = world.pumpkins.length;
 
   // fuse/gate handling: each state remembers the fuses it lit ([cell, time]).
@@ -247,7 +250,7 @@ export function search(levelData, opts = {}) {
   let sims = 0;
 
   // with hazards the clock matters too (coarse phase bucket)
-  const keyOf = (s) => `${Math.floor((s.x + CFG.BODY_W / 2) / T)},${Math.round(s.feet / T)},${s.pm},${s.tm}` +
+  const keyOf = (s) => `${Math.floor((s.x + CFG.BODY_W / 2) / T)},${Math.round(s.feet / T)},${s.pm},${s.tm}${s.ks ? 'K' : ''}` +
     (CLOCKED ? `,${Math.floor(s.time) % 20}` : '') +
     (PUZZLE ? `,${plateMask(s)}` : '') +
     (world.flammables.size ? `,F${(s.fires || []).map((x) => x[0]).sort().join('.')}` : '');
@@ -293,6 +296,7 @@ export function search(levelData, opts = {}) {
       }
       world.torches.forEach((t, i) => { t.lit = !!(s.tm & (1 << i)); });
       world.pumpkins.forEach((pk, i) => { pk.taken = !!(s.pm & (1 << i)); });
+      if (world.keepsake) world.keepsake.got = !!s.ks;
       player.spawn(s.x + CFG.BODY_W / 2, s.feet, s.wax);
       player.h = player.targetHeight();
       player.y = s.feet - player.h;
@@ -337,8 +341,9 @@ export function search(levelData, opts = {}) {
 
       const tm = world.torches.reduce((m, t, i) => m | (t.lit ? 1 << i : 0), 0);
       const pm = world.pumpkins.reduce((m, pk, i) => m | (pk.taken ? 1 << i : 0), 0);
+      const ks = !!(world.keepsake && world.keepsake.got);
       const ns = {
-        x: player.x, feet: player.feet, wax: player.wax, pm, tm,
+        x: player.x, feet: player.feet, wax: player.wax, pm, tm, ks,
         time: s.time + f * DT, fc: s.fc + f, wet: player.wetTime, hurt: player.hurt, parent: s, act: name,
         ride: player.riding ? world.movers.indexOf(player.riding) : -1, fires,
         blobs: CARRY ? world.blobs.map((b) => [b.tx, b.ty, b.age]) : null,
@@ -346,6 +351,10 @@ export function search(levelData, opts = {}) {
         arrivals: arrivalWax !== null ? [...s.arrivals, Math.round(arrivalWax)] : s.arrivals,
       };
       if (world.complete) {
+        if ((ks || !(opts.needKeepsake || opts.target === 'keepsake')) && (!goalHit || ns.wax > goalHit.wax)) goalHit = ns;
+        continue;
+      }
+      if (opts.target === 'keepsake' && ks && !s.ks) {
         if (!goalHit || ns.wax > goalHit.wax) goalHit = ns;
         continue;
       }
