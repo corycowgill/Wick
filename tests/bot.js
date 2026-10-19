@@ -343,6 +343,7 @@ export function search(levelData, opts = {}) {
       world.pumpkins.forEach((pk, i) => { pk.taken = !!(s.pm & (1 << i)); });
       if (world.keepsake) world.keepsake.got = !!s.ks;
       player.spawn(s.x + CFG.BODY_W / 2, s.feet, s.wax);
+      player.facing = s.facing || 1;      // facing carries between moves, as in real play (drips go the way you face)
       player.h = player.targetHeight();
       player.y = s.feet - player.h;
       player.wetTime = s.wet || 0;          // wetness carries over between moves, as in real play
@@ -388,7 +389,7 @@ export function search(levelData, opts = {}) {
       const pm = world.pumpkins.reduce((m, pk, i) => m | (pk.taken ? 1 << i : 0), 0);
       const ks = !!(world.keepsake && world.keepsake.got);
       const ns = {
-        x: player.x, feet: player.feet, wax: player.wax, pm, tm, ks,
+        x: player.x, feet: player.feet, wax: player.wax, pm, tm, ks, facing: player.facing,
         time: s.time + f * DT, fc: s.fc + f, wet: player.wetTime, hurt: player.hurt, parent: s, act: name,
         ride: player.riding ? world.movers.indexOf(player.riding) : -1, fires,
         blobs: CARRY ? world.blobs.map((b) => [b.tx, b.ty, b.age]) : null,
