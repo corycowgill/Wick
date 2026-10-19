@@ -163,6 +163,23 @@ export class TouchControls {
     const el = this.root.querySelector('#tc-' + name);
     if (el && el.classList.contains('off') === on) el.classList.toggle('off', !on);
   }
+  // size: small|normal|large, opacity: faint|normal|solid, swap: buttons on the left
+  setLayout(size, opacity, swap) {
+    const key = `${size}|${opacity}|${swap}`;
+    if (key === this.layout) return;
+    this.layout = key;
+    const cl = this.root.classList;
+    for (const c of [...cl]) if (c.startsWith('size-') || c.startsWith('op-')) cl.remove(c);
+    if (size !== 'normal') cl.add('size-' + size);
+    if (opacity !== 'normal') cl.add('op-' + opacity);
+    cl.toggle('swap', !!swap);
+  }
+  // shown over the Options page so layout changes can be seen; never takes presses
+  setPreview(on) {
+    if (on === this.root.classList.contains('preview')) return;
+    this.root.classList.toggle('preview', on);
+    if (on) this.state.releaseAll();
+  }
   show(v) {
     if (v === this.visible) return;
     this.visible = v;

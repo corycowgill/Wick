@@ -1,5 +1,6 @@
 // Player options, stored in localStorage 'wick.settings':
-//   { v: 1, gentle, timer, shake, reduceFlash, keys: { jump: [codes], drip: [codes], soak: [codes] } }
+//   { v: 1, gentle, timer, shake, reduceFlash, keys: { jump: [codes], drip: [codes], soak: [codes] },
+//     touchSize: 'small'|'normal'|'large', touchOpacity: 'faint'|'normal'|'solid', touchSwap }
 // Bot replays force the defaults (Settings.forced) so recorded routes play out exactly.
 import { GENTLE, NO_ASSIST } from './config.js';
 
@@ -8,7 +9,13 @@ export const DEFAULT_KEYS = Object.freeze({
   drip: Object.freeze(['ArrowDown', 'KeyS', 'KeyX']),
   soak: Object.freeze(['KeyE']),
 });
-export const DEFAULTS = Object.freeze({ v: 1, gentle: false, timer: false, shake: true, reduceFlash: false, keys: DEFAULT_KEYS });
+export const DEFAULTS = Object.freeze({
+  v: 1, gentle: false, timer: false, shake: true, reduceFlash: false, keys: DEFAULT_KEYS,
+  touchSize: 'normal', touchOpacity: 'normal', touchSwap: false,
+});
+// touch button layout choices, in the order the Options page cycles them
+export const TOUCH_SIZES = ['small', 'normal', 'large'];
+export const TOUCH_OPACITIES = ['faint', 'normal', 'solid'];
 
 // keys a binding can never take: movement and the fixed menu/system keys
 export const RESERVED_KEYS = new Set([
@@ -36,7 +43,9 @@ function copyKeys(k) { return { jump: [...k.jump], drip: [...k.drip], soak: [...
 function sanitize(d) {
   const s = { ...DEFAULTS, keys: copyKeys(DEFAULT_KEYS) };
   if (!d || typeof d !== 'object') return s;
-  for (const k of ['gentle', 'timer', 'shake', 'reduceFlash']) if (typeof d[k] === 'boolean') s[k] = d[k];
+  for (const k of ['gentle', 'timer', 'shake', 'reduceFlash', 'touchSwap']) if (typeof d[k] === 'boolean') s[k] = d[k];
+  if (TOUCH_SIZES.includes(d.touchSize)) s.touchSize = d.touchSize;
+  if (TOUCH_OPACITIES.includes(d.touchOpacity)) s.touchOpacity = d.touchOpacity;
   if (d.keys && typeof d.keys === 'object') {
     for (const a of ['jump', 'drip', 'soak']) {
       const list = d.keys[a];

@@ -2,7 +2,7 @@
 import { CFG } from './config.js';
 import { Events } from './events.js';
 import { Input, input, setBindings } from './input.js';
-import { Settings, keyName } from './settings.js';
+import { Settings, keyName, TOUCH_SIZES, TOUCH_OPACITIES } from './settings.js';
 import { Player } from './player.js';
 import { createWorld } from './level.js';
 import { Camera } from './render/camera.js';
@@ -32,6 +32,7 @@ const canvas = document.getElementById('game');
 const ctx = canvas.getContext('2d');
 const rotateEl = document.getElementById('rotate');
 let scale = 1;
+let dprCap = CFG.MAX_DPR;   // drops to 1 if a phone can't keep up (see frame())
 
 const state = {
   scene: 'title',          // title | play | end
@@ -60,6 +61,8 @@ const state = {
   frameMs: 0,
   intro: false,            // the studio intro is playing over the title
   slowFrames: 0,
+  quality: 2,              // 2 full, 1 lighter light layer, 0 also 1x canvas and no grain/shafts
+  perf: { ms: 0, gap: 0, n: 0 },
 };
 
 // ---------------------------------------------------------------- persistence
@@ -190,7 +193,7 @@ function resize() {
   const cssW = Math.floor(W * s), cssH = Math.floor(H * s);
   canvas.style.width = cssW + 'px';
   canvas.style.height = cssH + 'px';
-  const dpr = Math.min(window.devicePixelRatio || 1, CFG.MAX_DPR);
+  const dpr = Math.min(window.devicePixelRatio || 1, dprCap);
   canvas.width = Math.round(cssW * dpr);
   canvas.height = Math.round(cssH * dpr);
   scale = canvas.width / W;
@@ -241,7 +244,7 @@ window.addEventListener('blur', () => { if (state.scene === 'play' && !DEBUG) st
 // ---------------------------------------------------------------- events -> juice
 const P = state.particles;
 const shake = (amount) => { if (Settings.get().shake) state.camera.shake(amount); };
-Events.on('jump', (e) => { Audio.sfx('jump', e); P.dust(e.x, e.y, 4, 0.6); });
+Events.on('jump', (e) => { Audio.sfx('jump', e); P.dust(e.x, e.y, 4, 0.6); if (state.help) { const j = state.help.jumps; j.push({ t: state.levelStats.time, x: e.x }); if (j.length > 20) j.shift(); } });
 Events.on('land', (e) => {
   Audio.sfx('land', e);
   P.dust(e.x, e.y, 6 + (e.hard * 6 | 0), 0.6 + e.hard);
@@ -298,6 +301,7 @@ Events.on('moth', (e) => {
   P.smoke(e.x, e.y, 4);
   shake(3);
   state.hitStop = 2;
+  if (state.help) state.help.lastMoth = state.levelStats.time;
   Input.gamepad.rumble('land');
 });
 Events.on('steam', (e) => { Audio.sfx('steam'); P.steam(e.x, e.y); });
@@ -308,7 +312,41 @@ Events.on('death', (e) => {
   P.smoke(e.x, e.y - 10, 12);
   shake(3);
   Input.gamepad.rumble('death');
+  noteDeath(e);
 });
+
+// ---------------------------------------------------------------- adaptive help
+// Three deaths near the same spot earn one gentle tip per level visit, picked from how Wick
+// died. Presentation only: it reads the sim, never feeds back into it, and stays out of replays.
+const HELP_RADIUS = 5 * CFG.TILE;
+const TIPS = {
+  burnout: 'Low wax means lower jumps. A torch refills you.',
+  water: 'Wait for the drip to stop — watch the drops thin out.',
+  moth: 'Moths follow a fixed loop. Watch the dotted path.',
+  gap: 'Drip wax ({drip}) to make a step.',
+  wind: 'Gusts are announced by swirling leaves.',
+};
+function newHelp() { return { deaths: [], jumps: [], lastMoth: -99, lastWind: -99, shown: false, pending: null, tip: null }; }
+
+function noteDeath(e) {
+  const h = state.help;
+  if (!h || state.replay || Settings.forced || h.shown) return;
+  const t = state.levelStats.time;
+  h.deaths.push({ x: e.x, y: e.y });
+  const near = h.deaths.filter((d) => Math.hypot(d.x - e.x, d.y - e.y) < HELP_RADIUS).length;
+  if (near < 3) return;
+  let kind = e.reason === 'water' ? 'water' : 'burnout';
+  if (kind === 'burnout') {
+    // stuck jumping at the same ledge or gap: several jumps in the last few seconds, all close together
+    const recent = h.jumps.filter((j) => t - j.t < 6);
+    const spread = recent.length ? Math.max(...recent.map((j) => j.x)) - Math.min(...recent.map((j) => j.x)) : Infinity;
+    if (t - h.lastMoth < 4) kind = 'moth';
+    else if (t - h.lastWind < 3) kind = 'wind';
+    else if (recent.length >= 3 && spread < HELP_RADIUS) kind = 'gap';
+  }
+  h.shown = true;
+  h.pending = TIPS[kind];
+}
 Events.on('levelComplete', (e) => {
   wickMood('joy', 3);
   Audio.sfx('complete');
@@ -351,6 +389,7 @@ function startLevel(i) {
   state.levelStats = { time: 0, deaths: 0, wax: 0, gentle: Settings.get().gentle };
   state.levelResult = null;
   state.keepsakePop = 0;
+  state.help = newHelp();
 }
 
 function newGame(i = 0) {
@@ -408,7 +447,7 @@ function pauseItems() {
 }
 
 // ---------------------------------------------------------------- options
-// state.opts = { from: 'title' | 'pause', page: 'main' | 'keys', back: sel to restore, remap: action | null }
+// state.opts = { from: 'title' | 'pause', page: 'main' | 'keys' | 'touch', back: sel to restore, remap: action | null }
 const ACTIONS = [['jump', 'Jump'], ['drip', 'Drip wax'], ['soak', 'Soak blob']];
 
 function openOptions(from) {
@@ -442,6 +481,18 @@ function optionItems() {
     items.push({ label: 'Back', act: () => { state.opts.page = 'main'; state.sel = 4; } });
     return items;
   }
+  if (state.opts.page === 'touch') {
+    const cap = (v) => v[0].toUpperCase() + v.slice(1);
+    const cycle = (list, key) => (dir = 1) => setOption(key, list[(list.indexOf(s[key]) + (dir < 0 ? list.length - 1 : 1)) % list.length]);
+    return [
+      { label: `Button size: ${cap(s.touchSize)}`, toggle: cycle(TOUCH_SIZES, 'touchSize'), info: 'Bigger buttons are easier to hit; smaller ones show more of the level.' },
+      { label: `Button opacity: ${cap(s.touchOpacity)}`, toggle: cycle(TOUCH_OPACITIES, 'touchOpacity'), info: 'How strongly the buttons show over the game.' },
+      { label: `Swap sides: ${on(s.touchSwap)}`, toggle: () => setOption('touchSwap', !s.touchSwap),
+        info: 'Jump, drip and soak on the left, the thumb pad on the right.' },
+      { label: 'Back', act: () => { state.opts.page = 'main'; state.sel = 4; } },
+    ];
+  }
+  const touch = Input.lastDevice === 'touch';
   return [
     { label: `Gentle wax: ${on(s.gentle)}`, toggle: () => setOption('gentle', !s.gentle),
       info: 'Wax burns slower, moths steal less, rain takes longer. No swift or bright medals.' },
@@ -449,7 +500,9 @@ function optionItems() {
     { label: `Screen shake: ${on(s.shake)}`, toggle: () => setOption('shake', !s.shake), info: 'Camera shake on landings, moths and doors.' },
     { label: `Flashes: ${s.reduceFlash ? 'Reduced' : 'Full'}`, toggle: () => setOption('reduceFlash', !s.reduceFlash),
       info: 'Softens the torch flash and lightning, for light-sensitive eyes.' },
-    { label: 'Controls', act: () => { state.opts.page = 'keys'; state.sel = 0; }, info: 'Change the keyboard keys for jump, drip and soak.' },
+    touch
+      ? { label: 'Touch controls', act: () => { state.opts.page = 'touch'; state.sel = 0; }, info: 'Button size, opacity, and a left-handed layout.' }
+      : { label: 'Controls', act: () => { state.opts.page = 'keys'; state.sel = 0; }, info: 'Change the keyboard keys for jump, drip and soak.' },
     { label: 'Back', act: closeOptions },
   ];
 }
@@ -478,11 +531,11 @@ function updateOptions() {
   if (state.sel >= items.length) state.sel = 0;
   if (input.backPressed || input.pausePressed) {
     Audio.sfx('menu');
-    if (o.page === 'keys') { o.page = 'main'; state.sel = 4; } else closeOptions();
+    if (o.page !== 'main') { o.page = 'main'; state.sel = 4; } else closeOptions();
     return;
   }
   const it = items[state.sel];
-  if (it && it.toggle && (input.leftPressed || input.rightPressed)) { it.toggle(); Audio.sfx('menu'); return; }
+  if (it && it.toggle && (input.leftPressed || input.rightPressed)) { it.toggle(input.leftPressed ? -1 : 1); Audio.sfx('menu'); return; }
   const c = navMenu(items.length);
   if (c < 0) return;
   if (items[c].toggle) items[c].toggle();
@@ -492,7 +545,7 @@ function updateOptions() {
 function drawOptions() {
   const items = optionItems();
   const o = state.opts;
-  UI.drawMenu(ctx, o.page === 'keys' ? 'Controls' : 'Options', items.map((i) => i.label), state.sel, {
+  UI.drawMenu(ctx, o.page === 'keys' ? 'Controls' : o.page === 'touch' ? 'Touch controls' : 'Options', items.map((i) => i.label), state.sel, {
     top: H * 0.2, backdrop: o.from === 'title' ? 'rgba(14,6,28,0.8)' : undefined,
     footer: (items[state.sel] && items[state.sel].info) || '',
   });
@@ -595,6 +648,7 @@ function update(dt) {
     else if (c === 5) toTitle();
     return;
   }
+  const tap = state.tap;
   state.tap = null;
   if (input.pausePressed) { state.paused = true; state.sel = 0; Audio.setFlame(0, false); Audio.heartbeat(1, false); return; }
   if (state.hitStop > 0) { state.hitStop--; return; }
@@ -603,8 +657,15 @@ function update(dt) {
 
   if (state.completeTimer > 0) {
     state.completeTimer -= dt;
-    // skip the rest of the celebration once the card is up
-    if (state.completeMax - state.completeTimer > 1 && (input.jumpPressed || input.confirmPressed)) state.completeTimer = 0;
+    // once the card is up: retry the level for a medal (R / Y / the card's Retry button),
+    // or skip the rest of the celebration with any other press
+    if (state.completeMax - state.completeTimer > 1) {
+      const retry = !world.data.finale && !state.replay &&
+        (input.restartPressed || tap && UI.retryRect && UI.hitRect(UI.retryRect, tap.x, tap.y));
+      if (retry) { Audio.sfx('select'); startLevel(state.levelIndex); return; }
+      const any = !state.replay && (input.anyPressed && !input.mutePressed || tap);
+      if (input.jumpPressed || input.confirmPressed || any) state.completeTimer = 0;
+    }
     world.update(dt, null);
     if (state.completeTimer <= 0) {
       if (state.levelIndex + 1 < LEVELS.length) startLevel(state.levelIndex + 1);
@@ -629,8 +690,18 @@ function update(dt) {
       state.levelStats.deaths++;
       respawn();
       state.iris = 0;
+      const h = state.help;
+      if (h.pending) { h.tip = { text: h.pending, t: 0, life: 7 }; h.pending = null; }
+    }
+    // remember being caught in a gust, for the wind tip
+    if (!state.replay) {
+      for (const z of world.windZones()) {
+        const r = z.rect;
+        if (z.state === 'gust' && player.cx > r.x && player.cx < r.x + r.w && player.feet > r.y && player.y < r.y + r.h) state.help.lastWind = state.levelStats.time;
+      }
     }
   }
+  if (state.help.tip && (state.help.tip.t += dt) > state.help.tip.life) state.help.tip = null;
 
   camera.update(dt, player, world);
   for (const z of world.windZones()) {
@@ -791,12 +862,13 @@ function renderPlay(t) {
     runTimer: Settings.get().timer && state.stats.time > state.levelStats.time + 0.5 ? state.stats.time : null,
     timerGentle: state.levelStats.gentle,
   });
+  if (state.help && state.help.tip && !state.completeTimer) UI.drawTip(ctx, state.help.tip, UI.glyphs(Input.lastDevice));
   if (state.levelCard > 0) UI.drawLevelCard(ctx, world, state.levelIndex, CFG.LEVEL_CARD_TIME - state.levelCard);
   if (state.completeTimer > 0) {
     const k = Math.max(0, 1 - state.completeTimer / 0.6);
     if (k > 0) { ctx.fillStyle = `rgba(14,6,28,${k})`; ctx.fillRect(0, 0, W, H); }
     const shown = state.completeMax - state.completeTimer;
-    if (!world.data.finale) UI.drawCompleteCard(ctx, world, state.levelIndex, state.levelStats, shown, state.completeTimer, state.levelResult);
+    if (!world.data.finale) UI.drawCompleteCard(ctx, world, state.levelIndex, state.levelStats, shown, state.completeTimer, state.levelResult, Input.lastDevice);
   }
   if (state.iris < 1) Post.iris(ctx, state.iris, player.cx - cam.x, player.y + player.h / 2 - cam.y);
   if (state.paused && !state.rotateBlock) {
@@ -810,7 +882,7 @@ function renderPlay(t) {
   }
   if (DEBUG) {
     ctx.font = '12px monospace'; ctx.fillStyle = '#fff'; ctx.textAlign = 'left'; ctx.textBaseline = 'top';
-    ctx.fillText(`frame ${state.frameMs.toFixed(2)}ms  wax ${player.wax.toFixed(1)}  x ${(player.cx / 32).toFixed(1)} y ${(player.feet / 32).toFixed(1)}  dev ${Input.lastDevice}`, 90, 8);
+    ctx.fillText(`frame ${state.frameMs.toFixed(2)}ms  wax ${player.wax.toFixed(1)}  x ${(player.cx / 32).toFixed(1)} y ${(player.feet / 32).toFixed(1)}  dev ${Input.lastDevice}  q${state.quality}`, 90, 8);
   }
 }
 
@@ -878,7 +950,13 @@ function frame(now) {
       if (steps >= 5) { acc = 0; break; }
     }
   }
-  const showTouch = Input.lastDevice === 'touch' && state.scene === 'play' && !state.paused && !state.rotateBlock;
+  // the touch buttons hide under the level-complete card (its Retry button needs the taps),
+  // and show, untouchable, as a live preview on the touch controls options page
+  const preview = !!(state.opts && state.opts.page === 'touch');
+  const showTouch = preview || Input.lastDevice === 'touch' && state.scene === 'play' && !state.paused && !state.rotateBlock && !state.completeTimer;
+  const ts = Settings.get();
+  Input.touch.setLayout(ts.touchSize, ts.touchOpacity, ts.touchSwap);
+  Input.touch.setPreview(preview);
   Input.touch.show(showTouch);
   const t0 = performance.now();
   render();
@@ -886,8 +964,26 @@ function frame(now) {
   state.frameMs = state.frameMs * 0.95 + ms * 0.05;
   // protect the framerate on phones: smaller light layer, skip the desaturation pass
   if (state.scene === 'play' && state.frameMs > 11 && Lighting.scale > 0.34) {
-    if (++state.slowFrames > 90) { Lighting.setScale(0.33); Lighting.desaturate = false; state.slowFrames = 0; }
+    if (++state.slowFrames > 90) { Lighting.setScale(0.33); Lighting.desaturate = false; state.slowFrames = 0; state.quality = 1; }
   } else state.slowFrames = 0;
+  // still slow (or GPU-bound, which draw time misses), on a high-DPR screen: once, drop to a 1x canvas and skip film grain
+  // and light shafts. Judged on 2 s of live play, by draw time or by the gap between frames.
+  const pf = state.perf;
+  if (state.quality > 0 && state.scene === 'play' && !state.paused && !state.replay && (window.devicePixelRatio || 1) > 1) {
+    if (dt < 0.2) {   // ignore hitches and returning from the background
+      pf.ms += ms; pf.gap += dt * 1000; pf.n++;
+      if (pf.gap >= 2000) {
+        if (pf.ms / pf.n > 14 || pf.gap / pf.n > 24) {
+          state.quality = 0;
+          Lighting.setScale(0.33); Lighting.desaturate = false;
+          dprCap = 1;
+          Post.quality = 0;
+          resize();
+        }
+        pf.ms = pf.gap = pf.n = 0;
+      }
+    }
+  } else pf.ms = pf.gap = pf.n = 0;
   requestAnimationFrame(frame);
 }
 
@@ -907,7 +1003,7 @@ if (params.has('level')) {
   }
 }
 window.WICK = {
-  state, LEVELS, startLevel, Lighting, Audio, Settings, records: loadRecords,
+  state, LEVELS, startLevel, Lighting, Audio, Settings, UI, records: loadRecords,
   // restart `level` and drive it with recorded inputs from the very first frame
   replay(level, frames, speed = 1) {
     if (state.opts) closeOptions();

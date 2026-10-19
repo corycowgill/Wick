@@ -32,14 +32,26 @@
   }
   noscript { color: #fbe9c8; font: 16px sans-serif; }
 
-  /* touch controls: translucent amber circles, safe-area aware */
-  #touch { position: fixed; inset: 0; pointer-events: none; display: none; z-index: 5; }
+  /* touch controls: translucent amber circles, safe-area aware.
+     Size, opacity and handedness come from Options: --tc-s scales the buttons,
+     --tc-op / --tc-op-down set their idle and pressed opacity, .swap mirrors the layout. */
+  #touch {
+    position: fixed; inset: 0; pointer-events: none; display: none; z-index: 5;
+    --tc-s: 1; --tc-op: 0.35; --tc-op-down: 0.7;
+    --sl: env(safe-area-inset-left, 0px); --sr: env(safe-area-inset-right, 0px); --sb: env(safe-area-inset-bottom, 0px);
+  }
   #touch.on { display: block; }
+  #touch.size-small { --tc-s: 0.8; }
+  #touch.size-large { --tc-s: 1.25; }
+  #touch.op-faint { --tc-op: 0.18; --tc-op-down: 0.5; }
+  #touch.op-solid { --tc-op: 0.62; --tc-op-down: 0.88; }
+  /* options preview: shown over the menu but never pressed */
+  #touch.preview .tc, #touch.preview #tc-zone { pointer-events: none; }
   .tc {
     position: absolute; pointer-events: auto; touch-action: none;
     -webkit-user-select: none; user-select: none; -webkit-touch-callout: none;
     display: flex; align-items: center; justify-content: center;
-    color: #2a1630; font: 800 15px "Trebuchet MS", Verdana, sans-serif; letter-spacing: 0.5px;
+    color: #2a1630; font: 800 calc(15px * var(--tc-s)) "Trebuchet MS", Verdana, sans-serif; letter-spacing: 0.5px;
     box-sizing: border-box;
   }
   .tc.round, .tc .half {
@@ -47,9 +59,9 @@
     background: radial-gradient(circle at 40% 35%, rgba(255, 214, 140, 0.95), rgba(232, 128, 48, 0.85));
     border: 3px solid rgba(255, 236, 190, 0.9);
     box-shadow: 0 0 18px rgba(255, 150, 60, 0.6);
-    opacity: 0.35; transition: opacity 60ms;
+    opacity: var(--tc-op); transition: opacity 60ms;
   }
-  .tc.down, .tc .half.down { opacity: 0.7; }
+  .tc.down, .tc .half.down { opacity: var(--tc-op-down); }
   .tc.off { filter: grayscale(1) brightness(0.7); }
   /* floating thumb pad: touch anywhere in the lower left, the pad appears under the thumb */
   #tc-zone {
@@ -58,29 +70,35 @@
   }
   #tc-pad {
     position: absolute; pointer-events: none; width: 0; height: 0;
-    left: calc(env(safe-area-inset-left, 0px) + 96px); bottom: calc(env(safe-area-inset-bottom, 0px) + 92px);
+    left: calc(var(--sl) + 96px); bottom: calc(var(--sb) + 92px);
   }
   #tc-ring {
     position: absolute; left: -64px; top: -64px; width: 128px; height: 128px; border-radius: 50%;
     box-sizing: border-box; border: 3px solid rgba(255, 226, 170, 0.75);
     background: radial-gradient(circle, rgba(255, 170, 80, 0.10) 0%, rgba(255, 150, 60, 0.28) 70%, rgba(255, 190, 110, 0.4) 100%);
     box-shadow: 0 0 22px rgba(255, 150, 60, 0.45), inset 0 0 18px rgba(255, 150, 60, 0.35);
-    opacity: 0.35; transition: opacity 80ms;
+    opacity: var(--tc-op); transition: opacity 80ms;
   }
   #tc-knob {
     position: absolute; left: -30px; top: -30px; width: 60px; height: 60px; border-radius: 50%;
     background: radial-gradient(circle at 38% 32%, #fff2c8, #ffb24a 55%, #d8682a);
     border: 3px solid rgba(255, 240, 200, 0.95); box-shadow: 0 0 16px rgba(255, 160, 70, 0.8);
-    opacity: 0.5; transition: transform 90ms ease-out, opacity 80ms;
+    opacity: calc(var(--tc-op) + 0.15); transition: transform 90ms ease-out, opacity 80ms;
   }
-  #tc-pad.down #tc-ring { opacity: 0.75; }
+  #tc-pad.down #tc-ring { opacity: calc(var(--tc-op-down) + 0.05); }
   #tc-pad.down #tc-knob { opacity: 0.9; transition: opacity 80ms; }
   #tc-pad .arrow { position: absolute; top: -11px; font-size: 18px; color: rgba(255, 230, 180, 0.6); }
   #tc-pad .arrow.l { left: -56px; } #tc-pad .arrow.r { left: 40px; }
-  #tc-jump { width: 100px; height: 100px; right: calc(env(safe-area-inset-right, 0px) + 18px); bottom: calc(env(safe-area-inset-bottom, 0px) + 18px); font-size: 17px; }
-  #tc-drip { width: 84px; height: 84px; right: calc(env(safe-area-inset-right, 0px) + 130px); bottom: calc(env(safe-area-inset-bottom, 0px) + 26px); }
-  #tc-absorb { width: 66px; height: 66px; right: calc(env(safe-area-inset-right, 0px) + 36px); bottom: calc(env(safe-area-inset-bottom, 0px) + 132px); font-size: 12px; }
-  #tc-pause { width: 50px; height: 50px; right: calc(env(safe-area-inset-right, 0px) + 14px); top: calc(env(safe-area-inset-top, 0px) + 12px); font-size: 14px; }
+  #tc-jump { width: calc(100px * var(--tc-s)); height: calc(100px * var(--tc-s)); right: calc(var(--sr) + 18px); bottom: calc(var(--sb) + 18px); font-size: calc(17px * var(--tc-s)); }
+  #tc-drip { width: calc(84px * var(--tc-s)); height: calc(84px * var(--tc-s)); right: calc(var(--sr) + 18px + 112px * var(--tc-s)); bottom: calc(var(--sb) + 18px + 8px * var(--tc-s)); }
+  #tc-absorb { width: calc(66px * var(--tc-s)); height: calc(66px * var(--tc-s)); right: calc(var(--sr) + 18px + 18px * var(--tc-s)); bottom: calc(var(--sb) + 18px + 114px * var(--tc-s)); font-size: calc(12px * var(--tc-s)); }
+  #tc-pause { width: 50px; height: 50px; right: calc(var(--sr) + 14px); top: calc(env(safe-area-inset-top, 0px) + 12px); font-size: 14px; }
+  /* left-handed: buttons bottom-left, thumb pad bottom-right (pause stays top-right) */
+  #touch.swap #tc-zone { left: auto; right: 0; }
+  #touch.swap #tc-pad { left: auto; right: calc(var(--sr) + 96px); }
+  #touch.swap #tc-jump { right: auto; left: calc(var(--sl) + 18px); }
+  #touch.swap #tc-drip { right: auto; left: calc(var(--sl) + 18px + 112px * var(--tc-s)); }
+  #touch.swap #tc-absorb { right: auto; left: calc(var(--sl) + 18px + 18px * var(--tc-s)); }
 
   #rotate {
     position: fixed; inset: 0; z-index: 10; display: none;

@@ -39,8 +39,9 @@ export const UI = {
 
   // index of the menu item under a point in view coordinates, or -1
   hitTest(x, y) {
-    return this.menuRects.findIndex((r) => x >= r.x && x <= r.x + r.w && y >= r.y && y <= r.y + r.h);
+    return this.menuRects.findIndex((r) => this.hitRect(r, x, y));
   },
+  hitRect(r, x, y) { return x >= r.x && x <= r.x + r.w && y >= r.y && y <= r.y + r.h; },
 
   // ---------------------------------------------------------------- HUD
   drawHUD(ctx, player, time, opts = {}) {
@@ -434,7 +435,11 @@ export const UI = {
   },
 
   // ---------------------------------------------------------------- level complete card
-  drawCompleteCard(ctx, world, index, stats, shown, left, res = null) {
+  // the card's Retry button (touch) in view coordinates, or null; set by drawCompleteCard
+  retryRect: null,
+
+  drawCompleteCard(ctx, world, index, stats, shown, left, res = null, device = 'keyboard') {
+    this.retryRect = null;
     const a = clamp(Math.min((shown - 0.5) / 0.35, (left + 0.3) / 0.4), 0, 1);
     if (a <= 0) return;
     const rise = (1 - Math.min(1, (shown - 0.5) / 0.35)) * 24;
@@ -442,7 +447,8 @@ export const UI = {
     ctx.globalAlpha = a;
     ctx.translate(0, rise);
     const marks = res ? ['keepsake', 'swift', 'bright'].filter((k) => res[k] !== null) : [];
-    const w = marks.length ? 420 : 380, h = marks.length ? 212 : 170, x = W / 2 - w / 2, y = H * (marks.length ? 0.27 : 0.3);
+    const foot = 34;   // the retry / continue hint along the bottom
+    const w = marks.length ? 420 : 380, h = (marks.length ? 212 : 170) + foot, x = W / 2 - w / 2, y = H * (marks.length ? 0.25 : 0.28);
     ctx.fillStyle = 'rgba(28,12,40,0.9)'; roundRect(ctx, x, y, w, h, 16); ctx.fill();
     ctx.strokeStyle = '#d9a640'; ctx.lineWidth = 2.5; ctx.stroke();
     ctx.textAlign = 'center'; ctx.textBaseline = 'middle';
@@ -487,6 +493,61 @@ export const UI = {
         ctx.fillText(label[k], ix + 15, y + 190);
         ctx.textAlign = 'center';
       });
+    }
+    // retry for medals, or carry on
+    const fy = y + h - foot / 2 - 4;
+    ctx.strokeStyle = 'rgba(217,166,64,0.35)'; ctx.lineWidth = 1;
+    ctx.beginPath(); ctx.moveTo(x + 24, fy - foot / 2 + 2); ctx.lineTo(x + w - 24, fy - foot / 2 + 2); ctx.stroke();
+    if (device === 'touch') {
+      const bw = 104, bh = 26, bx = W / 2 - 128, by = fy - bh / 2;
+      ctx.fillStyle = 'rgba(232,140,50,0.9)'; roundRect(ctx, bx, by, bw, bh, 13); ctx.fill();
+      ctx.strokeStyle = '#ffe2a0'; ctx.lineWidth = 1.5; ctx.stroke();
+      ctx.font = `700 14px ${SANS}`; ctx.fillStyle = '#2a1630';
+      ctx.fillText('↻ Retry', bx + bw / 2, fy + 1);
+      ctx.textAlign = 'left';
+      ctx.font = `600 13px ${SANS}`; ctx.fillStyle = 'rgba(251,233,200,0.7)';
+      ctx.fillText('tap elsewhere to continue', bx + bw + 14, fy + 1);
+      ctx.textAlign = 'center';
+      // a finger-sized hit area, in view coordinates (the card has stopped rising by now)
+      this.retryRect = { x: bx - 10, y: by + rise - 10, w: bw + 20, h: bh + 20 };
+    } else {
+      const g = this.glyphs(device);
+      const cont = device === 'gamepad' ? `${g.jump} continue` : 'any key continue';
+      ctx.font = `600 13px ${SANS}`; ctx.fillStyle = 'rgba(251,233,200,0.7)';
+      ctx.fillText(`${g.restart} retry  ·  ${cont}`, W / 2, fy + 1);
+    }
+    ctx.restore();
+  },
+
+  // the adaptive-help bubble: sign styling, top centre under the toasts, {glyph} tokens in amber
+  drawTip(ctx, tip, glyphs) {
+    const a = clamp(Math.min(tip.t / 0.4, (tip.life - tip.t) / 0.6), 0, 1);
+    if (a <= 0) return;
+    const segs = [{ text: 'Tip  ', tag: true }];
+    const re = /\{(\w+)\}/g;
+    let last = 0, m;
+    while ((m = re.exec(tip.text))) {
+      if (m.index > last) segs.push({ text: tip.text.slice(last, m.index) });
+      segs.push({ text: glyphs[m[1]] || m[1], key: true });
+      last = m.index + m[0].length;
+    }
+    if (last < tip.text.length) segs.push({ text: tip.text.slice(last) });
+    ctx.save();
+    ctx.globalAlpha = a;
+    ctx.textBaseline = 'middle'; ctx.textAlign = 'left';
+    const font = (seg) => (seg.tag ? `800 13px ${SANS}` : `600 16px ${SANS}`);
+    let tw = 0;
+    for (const seg of segs) { ctx.font = font(seg); seg.w = ctx.measureText(seg.text).width; tw += seg.w; }
+    const bw = tw + 32, bh = 38, bx = W / 2 - bw / 2, by = 104 + (1 - Math.min(1, tip.t / 0.4)) * -8;
+    ctx.fillStyle = 'rgba(32,16,46,0.92)';
+    roundRect(ctx, bx, by, bw, bh, 10); ctx.fill();
+    ctx.strokeStyle = '#d9a640'; ctx.lineWidth = 2; ctx.stroke();
+    let x = bx + 16;
+    for (const seg of segs) {
+      ctx.font = font(seg);
+      ctx.fillStyle = seg.tag ? '#e8b03a' : seg.key ? '#ffc850' : '#fbe9c8';
+      ctx.fillText(seg.text, x, by + bh / 2 + 1);
+      x += seg.w;
     }
     ctx.restore();
   },
