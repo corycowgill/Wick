@@ -201,17 +201,17 @@ export const Lighting = {
     ctx.save();
     if (this.desaturate) {
       ctx.globalCompositeOperation = 'saturation';
-      const g = ctx.createRadialGradient(cx, cy, 100, cx, cy, Math.max(far, 240));
+      const g = ctx.createRadialGradient(cx, cy, 150, cx, cy, Math.max(far, 300));
       g.addColorStop(0, 'rgba(128,128,128,0)');
-      g.addColorStop(0.35, `rgba(128,128,128,${0.55 * k})`);
-      g.addColorStop(1, `rgba(128,128,128,${k})`);
+      g.addColorStop(0.35, `rgba(128,128,128,${0.4 * k})`);
+      g.addColorStop(1, `rgba(128,128,128,${0.75 * k})`);
       ctx.fillStyle = g;
       ctx.fillRect(0, 0, W, H);
     }
     ctx.globalCompositeOperation = 'source-over';
-    const g2 = ctx.createRadialGradient(cx, cy, 120, cx, cy, Math.max(far * 0.95, 260));
+    const g2 = ctx.createRadialGradient(cx, cy, 170, cx, cy, Math.max(far * 0.95, 320));
     g2.addColorStop(0, 'rgba(40,70,140,0)');
-    g2.addColorStop(1, `rgba(40,70,150,${(0.45 + pulse) * k})`);
+    g2.addColorStop(1, `rgba(40,70,150,${(0.3 + pulse) * k})`);
     ctx.fillStyle = g2;
     ctx.fillRect(0, 0, W, H);
     ctx.restore();

@@ -1,7 +1,7 @@
 // HUD candle meter, level card, menus, title and end screens, toasts.
 import { CFG, clamp, lerp } from './config.js';
 import { drawFlame, drawWick, wickMood } from './render/draw-wick.js';
-import { drawBackground, THEMES } from './render/draw-world.js';
+import { drawBackground, THEMES, themeOf } from './render/draw-world.js';
 import { BUILD, BUILD_DATE } from './version.js';
 import { CREDITS, CREDIT_STEP } from './credits.js';
 import { keyName } from './settings.js';
@@ -472,7 +472,7 @@ export const UI = {
       const open = reached.has(L.name), on = i === sel;
       ctx.fillStyle = on ? 'rgba(232,140,50,0.92)' : open ? 'rgba(50,26,70,0.9)' : 'rgba(30,16,40,0.75)';
       roundRect(ctx, cx, cy, cw, ch, 12); ctx.fill();
-      const th = THEMES[L.theme];
+      const th = themeOf({ data: L });   // scene palettes (Firebreak, Gale Locks) included
       if (open && !on && th) {
         // the level's own sky, washed across the top of the card
         ctx.save();
