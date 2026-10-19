@@ -11,6 +11,7 @@ let schedTimer = null;
 let nextNote = 0, step = 0, bar = 0;
 let lastSteam = 0;
 let nextBeat = 0;               // low-wax heartbeat: when the next lub-dub is due (0 = idle)
+let pausedDuck = false;         // music muffled under the pause menu
 
 // generated samples (see tools/gen_audio.py)
 const SAMPLE_FILES = [
@@ -264,6 +265,16 @@ export const Audio = {
     nextBeat = t + 1.15 - 0.5 * k;
   },
 
+  // the pause menu muffles the music and pulls it back, so the menu reads as a break
+  setPaused(on) {
+    if (!ctx || on === pausedDuck) return;
+    pausedDuck = on;
+    const t = now();
+    musicBus.gain.setTargetAtTime(on ? 0.3 : 0.7, t, 0.12);
+    musicFilter.frequency.setTargetAtTime(on ? 900 : 16000, t, 0.12);   // play's setTempo takes over again
+    if (ambience) ambience.gain.gain.setTargetAtTime(on ? 0.12 : 0.35, t, 0.2);
+  },
+
   setTempo(frac) {
     tempoFrac = Math.max(0, Math.min(1, frac));
     if (!ctx || !musicFilter) return;
@@ -372,6 +383,40 @@ export const Audio = {
       case 'moth':
         for (let i = 0; i < 5; i++) noise(0.04, 0.07, 'bandpass', 900, 1400, 3, t + i * 0.035);
         tone('sine', 480, 160, 0.3, 0.1, sfxBus, t + 0.05);
+        break;
+      case 'medal': {
+        // a mark stamping onto the level card: a bell pair that climbs with each mark
+        const f = hz(12 + [0, 4, 7][opts.i ?? 0]);
+        tone('sine', f, f, 0.5, 0.09, sfxBus, t, 0.004);
+        tone('triangle', f * 2, f * 2, 0.35, 0.04, sfxBus, t + 0.05, 0.004);
+        if (opts.fresh) [1.5, 2, 3].forEach((m, i) => tone('sine', f * m, f * m, 0.4, 0.035, sfxBus, t + 0.12 + i * 0.06, 0.004));
+        break;
+      }
+      case 'respawn':
+        // the flame catching again at the torch: a soft breathy whump and a lifting note
+        noise(0.32, 0.1, 'bandpass', 260, 1600, 1.1);
+        tone('triangle', 196, 392, 0.3, 0.06, sfxBus, t + 0.04, 0.03);
+        break;
+      case 'windWarn': {
+        // the gust drawing breath: a hollow swell that peaks as the push arrives
+        const v = opts.vol ?? 1;
+        const src = ctx.createBufferSource(); src.buffer = noiseBuf; src.loop = true;
+        const f = ctx.createBiquadFilter(); f.type = 'bandpass'; f.Q.value = 1.4;
+        f.frequency.setValueAtTime(260, t); f.frequency.exponentialRampToValueAtTime(900, t + 0.95);
+        const g = ctx.createGain();
+        g.gain.setValueAtTime(0.0001, t); g.gain.linearRampToValueAtTime(0.09 * v, t + 0.9); g.gain.exponentialRampToValueAtTime(0.0001, t + 1.25);
+        src.connect(f).connect(g).connect(sfxBus);
+        src.start(t, Math.random()); src.stop(t + 1.35);
+        break;
+      }
+      case 'rainStart':
+        // a drip curtain near Wick opening up: a short patter burst
+        for (let i = 0; i < 4; i++) noise(0.05, 0.05 * (opts.vol ?? 1), 'bandpass', 2400 + i * 300, 1800, 2.5, t + i * 0.045);
+        noise(0.35, 0.035 * (opts.vol ?? 1), 'highpass', 2500, 3500, 0.7, t + 0.05);
+        break;
+      case 'mothNear':
+        // wingbeats close by
+        for (let i = 0; i < 6; i++) noise(0.03, 0.045 * (opts.vol ?? 1), 'bandpass', 700, 1100, 2.5, t + i * 0.042);
         break;
       case 'menu':
         tone('triangle', 520, 520, 0.06, 0.07);

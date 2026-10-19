@@ -133,6 +133,8 @@ function selectMarks() {
       keepsake: info.keepsake ? !!r.keepsake : null,
       swift: info.par && info.par.time != null ? !!r.swift || (r.time != null && r.time <= info.par.time) : null,
       bright: info.par && info.par.wax != null ? !!r.bright || (r.wax != null && r.wax >= info.par.wax) : null,
+      // for the selected card's detail line: bests and the par to beat
+      time: r.time ?? null, wax: r.wax ?? null, deaths: r.deaths ?? null, par: info.par,
     };
     if (m.keepsake !== null) { kAll++; if (m.keepsake) kGot++; }
     for (const k of ['swift', 'bright']) if (m[k] !== null) { mAll++; if (m[k]) mGot++; }
@@ -162,6 +164,8 @@ function recordClear(world, stats) {
     par,
     gentle,
   };
+  // marks earned for the first time on this clear: the card stamps them with a NEW
+  res.fresh = { keepsake: !!res.keepsake && !prev.keepsake, swift: !!res.swift && !prev.swift, bright: !!res.bright && !prev.bright };
   if (state.replay) return res;   // bot replays don't touch the player's bests
   recs.levels[world.name] = {
     time: gentle ? prev.time : prev.time != null ? Math.min(prev.time, time) : time,
@@ -360,12 +364,18 @@ Events.on('levelComplete', (e) => {
   state.hitStop = 4;
   state.completeTimer = CFG.GOAL_DELAY + 0.9 + (state.world.data.finale ? 1.5 : 0);
   state.completeMax = state.completeTimer;
+  state.cardGo = false;
+  state.cardHeld = 0;
+  state.cardRang = 0;
   state.levelStats.wax = state.player.wax;
   try { state.levelResult = recordClear(state.world, state.levelStats); } catch { state.levelResult = null; }
   Input.gamepad.rumble('relight');
 });
 
 // ---------------------------------------------------------------- scenes
+// the level-complete card holds here (seconds left on its timer) until the player carries on
+const CARD_HOLD = 0.5;
+
 function startLevel(i) {
   state.levelIndex = i;
   state.world = createWorld(LEVELS[i]);
@@ -377,6 +387,9 @@ function startLevel(i) {
   P.clear();
   state.levelCard = CFG.LEVEL_CARD_TIME;
   state.completeTimer = 0;
+  state.cardGo = false;
+  state.cardHeld = 0;
+  state.cardRang = 0;
   state.paused = false;
   state.iris = 0;
   state.trail = [];
@@ -386,6 +399,7 @@ function startLevel(i) {
   Audio.music('play', i < 5 ? 'town' : 'night');
   Audio.ambience(themeOf(state.world).rain ? 'rain' : null);
   state.gusts = new Map();
+  state.rainOn = new Map();
   state.levelStats = { time: 0, deaths: 0, wax: 0, gentle: Settings.get().gentle };
   state.levelResult = null;
   state.keepsakePop = 0;
@@ -565,9 +579,18 @@ function navMenu(count) {
   return -1;
 }
 
+// back at the last torch. Presentation only past world.reset: the flame catches again with a
+// puff of sparks and a soft whump, and a quick iris blink covers the jump in place.
 function respawn() {
   state.world.reset(state.player);
   state.camera.snap(state.player, state.world);
+  const f = state.player.flamePos();
+  P.sparks(f.x, f.y, 12, 110);
+  P.ring(f.x, f.y, 60);
+  P.smoke(f.x, f.y - 4, 3);
+  Audio.sfx('respawn');
+  wickMood('surprise', 0.5);
+  state.iris = Math.min(state.iris, 0.3);
 }
 
 // ---------------------------------------------------------------- update
@@ -575,6 +598,7 @@ function update(dt) {
   state.time += dt;
   UI.update(dt);
   if (input.mutePressed) Audio.toggleMute();
+  Audio.setPaused(state.scene === 'play' && state.paused);
   if (state.opts) { updateOptions(); return; }
 
   if (state.scene === 'title') {
@@ -663,14 +687,34 @@ function update(dt) {
 
   if (state.completeTimer > 0) {
     state.completeTimer -= dt;
+    // the card waits for the player (replays keep the old fixed timing): it holds just
+    // before the fade to dark, so there is time to read the run and the medals
+    const hold = !state.replay && !world.data.finale && !state.cardGo;
+    if (hold && state.completeTimer < CARD_HOLD) { state.cardHeld += CARD_HOLD - state.completeTimer; state.completeTimer = CARD_HOLD; }
     // once the card is up: retry the level for a medal (R / Y / the card's Retry button),
-    // or skip the rest of the celebration with any other press
+    // or carry on with any other press
     if (state.completeMax - state.completeTimer > 1) {
       const retry = !world.data.finale && !state.replay &&
         (input.restartPressed || tap && UI.retryRect && UI.hitRect(UI.retryRect, tap.x, tap.y));
       if (retry) { Audio.sfx('select'); startLevel(state.levelIndex); return; }
       const any = !state.replay && (input.anyPressed && !input.mutePressed || tap);
-      if (input.jumpPressed || input.confirmPressed || any) state.completeTimer = 0;
+      if (input.jumpPressed || input.confirmPressed || any) {
+        if (hold) Audio.sfx('select');
+        state.cardGo = true;
+        // carrying on fades to dark from the hold point (replays cut straight to the next level)
+        state.completeTimer = state.replay ? 0 : Math.min(state.completeTimer, CARD_HOLD);
+      }
+    }
+    // the card stamps its marks in one at a time; each one earned rings as it lands
+    const res = state.levelResult;
+    if (res && !world.data.finale && !state.replay) {
+      const shown = state.completeMax - state.completeTimer + state.cardHeld;
+      UI.cardMarks(res).forEach((k, i) => {
+        if (res[k] && !(state.cardRang & (1 << i)) && shown >= UI.markAt(i)) {
+          state.cardRang |= 1 << i;
+          Audio.sfx('medal', { i, fresh: res.fresh && res.fresh[k] });
+        }
+      });
     }
     world.update(dt, null);
     if (state.completeTimer <= 0) {
@@ -714,9 +758,13 @@ function update(dt) {
   camera.update(dt, player, world);
   for (const z of world.windZones()) {
     const was = state.gusts.get(z);
-    if (z.state === 'gust' && was !== 'gust' && z.rect.x < camera.x + W + 200 && z.rect.x + z.rect.w > camera.x - 200) Audio.sfx('wind');
+    const near = z.rect.x < camera.x + W + 200 && z.rect.x + z.rect.w > camera.x - 200;
+    // a swell while the leaves swirl, so the gust can be heard coming, then the gust itself
+    if (z.state === 'warn' && was === 'idle' && near && !state.completeTimer) Audio.sfx('windWarn', { vol: inZone(z.rect, player) ? 1 : 0.6 });
+    if (z.state === 'gust' && was !== 'gust' && near) Audio.sfx('wind');
     state.gusts.set(z, z.state);
   }
+  hazardCues(world, player);
   P.ambient(dt, camera, world, !!themeOf(world).leaves);
   updateThemeFx(dt, P, camera, world, player, themeOf(world), (n) => Audio.sfx(n));
   if (player.alive) {
@@ -902,7 +950,7 @@ function renderPlay(t) {
   if (state.completeTimer > 0) {
     const k = Math.max(0, 1 - state.completeTimer / 0.6);
     if (k > 0) { ctx.fillStyle = `rgba(14,6,28,${k})`; ctx.fillRect(0, 0, W, H); }
-    const shown = state.completeMax - state.completeTimer;
+    const shown = state.completeMax - state.completeTimer + (state.cardHeld || 0);
     if (!world.data.finale) UI.drawCompleteCard(ctx, world, state.levelIndex, state.levelStats, shown, state.completeTimer, state.levelResult, Input.lastDevice, world.goal.x - cam.x);
   }
   if (state.iris < 1) Post.iris(ctx, state.iris, player.cx - cam.x, player.y + player.h / 2 - cam.y);
@@ -918,6 +966,31 @@ function renderPlay(t) {
   if (DEBUG) {
     ctx.font = '12px monospace'; ctx.fillStyle = '#fff'; ctx.textAlign = 'left'; ctx.textBaseline = 'top';
     ctx.fillText(`frame ${state.frameMs.toFixed(2)}ms  wax ${player.wax.toFixed(1)}  x ${(player.cx / 32).toFixed(1)} y ${(player.feet / 32).toFixed(1)}  dev ${Input.lastDevice}  q${state.quality}`, 90, 8);
+  }
+}
+
+function inZone(r, p) { return p.cx > r.x && p.cx < r.x + r.w && p.feet > r.y && p.y < r.y + r.h; }
+
+// Sound cues for hazards Wick is close to (presentation only, reads the sim): a patter as a
+// nearby drip curtain opens, and wingbeats when a moth passes close by.
+const mothHeard = new WeakMap();
+function hazardCues(world, player) {
+  if (!player.alive || state.completeTimer || state.replay) return;
+  const T = CFG.TILE, fx = player.cx, fy = player.y + player.h / 2;
+  let rain = 0;
+  for (const e of world.emitters) {
+    const was = state.rainOn.get(e);
+    state.rainOn.set(e, e.on);
+    if (!e.on || was !== false) continue;
+    const dx = Math.abs(e.x + T / 2 - fx);
+    if (dx < 7 * T && fy > e.y - 2 * T && fy < e.bottom + 2 * T) rain = Math.max(rain, 1 - dx / (7 * T));
+  }
+  if (rain > 0) Audio.sfx('rainStart', { vol: 0.4 + 0.6 * rain });
+  for (const m of world.moths) {
+    const d = Math.hypot(m.x - fx, m.y - fy);
+    if (d > 3 * T || state.time - (mothHeard.get(m) ?? -9) < 0.6) continue;
+    mothHeard.set(m, state.time);
+    Audio.sfx('mothNear', { vol: 1 - d / (3 * T) });
   }
 }
 

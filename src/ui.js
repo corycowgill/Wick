@@ -100,6 +100,18 @@ export const UI = {
       }
       drawMark(ctx, 'keepsake', kx, ky, r, opts.keepsake);
     }
+    {
+      // wax as a number, small, over the keepsake slot: bright medals are a wax target
+      const pct = Math.max(0, Math.round(frac * 100));   // rounded like the level card and the bright check
+      const nx = opts.keepsake != null ? 88 : 74, ny = base - (opts.keepsake != null ? 40 : 22);
+      ctx.save();
+      ctx.font = `700 13px ${SANS}`; ctx.textAlign = 'center'; ctx.textBaseline = 'middle';
+      ctx.lineWidth = 3; ctx.lineJoin = 'round'; ctx.strokeStyle = 'rgba(28,13,42,0.85)';
+      ctx.strokeText(`${pct}%`, nx, ny);
+      ctx.fillStyle = low ? (Math.sin(time * 10) > 0 ? '#ff7a5a' : '#ffd690') : 'rgba(251,233,200,0.85)';
+      ctx.fillText(`${pct}%`, nx, ny);
+      ctx.restore();
+    }
     let ty = 14;
     const rx = opts.touch ? W - 84 : W - 16;   // clear of the touch pause button
     if (opts.timer != null) {
@@ -532,18 +544,44 @@ export const UI = {
     ctx.strokeStyle = 'rgba(217,166,64,0.6)'; ctx.lineWidth = 2; ctx.stroke();
     ctx.font = `600 16px ${SANS}`; ctx.fillStyle = '#fbe9c8';
     ctx.fillText(device === 'gamepad' ? '\u24b7 Back' : device === 'touch' ? 'Back' : 'Esc  Back', W / 2, by + 19);
+    // the selected level's bests against its par, so a medal run knows its target
+    const sm = meta && levels[sel] && reached.has(levels[sel].name) ? meta.marks[sel] : null;
+    if (sm) {
+      const par = sm.par || {}, parts = [];
+      if (sm.time != null) parts.push({ t: `best ${fmtTime(sm.time)}`, ok: false });
+      if (par.time != null) parts.push({ t: `swift ≤${fmtTime(par.time)}`, ok: sm.swift });
+      if (par.wax != null) parts.push({ t: `bright ≥${par.wax}%`, ok: sm.bright });
+      if (sm.wax != null) parts.push({ t: `most wax ${sm.wax}%`, ok: false });
+      if (sm.keepsake !== null) parts.push({ t: sm.keepsake ? 'keepsake found' : 'keepsake hidden', ok: sm.keepsake });
+      if (sm.time == null) parts.unshift({ t: 'not cleared yet', ok: false });
+      ctx.font = `600 14px ${SANS}`;
+      const sep = '   ·   ', sw = ctx.measureText(sep).width;
+      const total = parts.reduce((a, q) => a + ctx.measureText(q.t).width, 0) + sw * (parts.length - 1);
+      let x = W / 2 - total / 2;
+      ctx.textAlign = 'left';
+      parts.forEach((q, k) => {
+        ctx.fillStyle = q.ok ? '#ffd690' : 'rgba(251,233,200,0.85)';
+        ctx.fillText(q.t, x, by + 54);
+        x += ctx.measureText(q.t).width;
+        if (k < parts.length - 1) { ctx.fillStyle = 'rgba(251,233,200,0.4)'; ctx.fillText(sep, x, by + 54); x += sw; }
+      });
+      ctx.textAlign = 'center';
+    }
     if (meta && (meta.kAll || meta.mAll)) {
       const parts = [];
       if (meta.kAll) parts.push(`keepsakes ${meta.kGot}/${meta.kAll}`);
       if (meta.mAll) parts.push(`medals ${meta.mGot}/${meta.mAll}`);
-      ctx.font = `600 14px ${SANS}`; ctx.fillStyle = 'rgba(251,233,200,0.75)';
-      ctx.fillText(parts.join('  ·  '), W / 2, by + 60);
+      ctx.font = `600 13px ${SANS}`; ctx.fillStyle = 'rgba(251,233,200,0.6)';
+      ctx.fillText(parts.join('  ·  '), W / 2, by + (sm ? 80 : 60));
     }
   },
 
   // ---------------------------------------------------------------- level complete card
   // the card's Retry button (touch) in view coordinates, or null; set by drawCompleteCard
   retryRect: null,
+  // which marks a clear's card shows, and when (card time) mark i stamps in
+  cardMarks(res) { return res ? ['keepsake', 'swift', 'bright'].filter((k) => res[k] !== null) : []; },
+  markAt(i) { return 1.05 + i * 0.32; },
 
   // `focusX` is the lit goal's screen x: the card slides in on the other side, so the
   // goal and the happy Wick beside it stay in view
@@ -551,7 +589,7 @@ export const UI = {
     this.retryRect = null;
     const a = clamp(Math.min((shown - 0.5) / 0.35, (left + 0.3) / 0.4), 0, 1);
     if (a <= 0) return;
-    const marks = res ? ['keepsake', 'swift', 'bright'].filter((k) => res[k] !== null) : [];
+    const marks = this.cardMarks(res);
     const foot = 34;   // the retry / continue hint along the bottom
     const w = marks.length ? 420 : 380, h = (marks.length ? 212 : 170) + foot;
     const side = focusX == null ? 0 : focusX > W / 2 ? -1 : 1;
@@ -607,11 +645,30 @@ export const UI = {
       const spread = marks.length > 1 ? (inner - total) / (marks.length - 1) : 0;
       let ix = marks.length > 1 ? x0 + inset : mid - total / 2;
       marks.forEach((k, i) => {
-        drawMark(ctx, k, ix + badge / 2, y + 189, 9, res[k]);
+        // each mark waits as an empty slot, then an earned one stamps in gold with a pop
+        const st = clamp((shown - this.markAt(i)) / 0.28, 0, 1), got = res[k] && st > 0;
+        const pop = got ? 1 + 0.7 * (1 - st) * (1 - st) : 1;
+        const bx = ix + badge / 2, byy = y + 189;
+        if (got && st < 1) {
+          ctx.save();
+          ctx.globalCompositeOperation = 'lighter';
+          const rg = ctx.createRadialGradient(bx, byy, 0, bx, byy, 30);
+          rg.addColorStop(0, `rgba(255,210,120,${0.55 * (1 - st)})`); rg.addColorStop(1, 'rgba(255,170,80,0)');
+          ctx.fillStyle = rg; ctx.fillRect(bx - 30, byy - 30, 60, 60);
+          ctx.restore();
+        }
+        drawMark(ctx, k, bx, byy, 9 * pop, got);
         ctx.textAlign = 'left';
         ctx.font = `600 ${px}px ${SANS}`;
-        ctx.fillStyle = res[k] ? '#ffe2a0' : 'rgba(251,233,200,0.5)';
+        ctx.fillStyle = got ? '#ffe2a0' : res[k] ? 'rgba(251,233,200,0.75)' : 'rgba(251,233,200,0.5)';
         ctx.fillText(label[k], ix + badge + pad, y + 190);
+        if (got && res.fresh && res.fresh[k]) {
+          // first time earned: a small NEW over the badge
+          ctx.textAlign = 'center';
+          ctx.font = `800 9px ${SANS}`;
+          ctx.fillStyle = `rgba(255,236,170,${st * (0.75 + 0.25 * Math.sin(shown * 6))})`;
+          ctx.fillText('NEW', bx, byy - 15);
+        }
         ctx.textAlign = 'center';
         ix += widths[i] + spread;
       });
@@ -628,15 +685,18 @@ export const UI = {
       ctx.fillText('↻ Retry', bx + bw / 2, fy + 1);
       ctx.textAlign = 'left';
       ctx.font = `600 13px ${SANS}`; ctx.fillStyle = 'rgba(251,233,200,0.7)';
-      ctx.fillText('tap elsewhere to continue', bx + bw + 14, fy + 1);
+      ctx.fillStyle = `rgba(251,233,200,${shown > 1 ? 0.7 + 0.25 * Math.sin((shown - 1) * 4) : 0.7})`;
+      ctx.fillText('tap elsewhere: next level', bx + bw + 14, fy + 1);
       ctx.textAlign = 'center';
       // a finger-sized hit area, in view coordinates (the card has stopped moving by now)
       const ox = slide + x - x0;
       this.retryRect = { x: bx + ox - 10, y: by + rise - 10, w: bw + 20, h: bh + 20 };
     } else {
       const g = this.glyphs(device);
-      const cont = device === 'gamepad' ? `${g.jump} continue` : 'any key continue';
-      ctx.font = `600 13px ${SANS}`; ctx.fillStyle = 'rgba(251,233,200,0.7)';
+      const cont = device === 'gamepad' ? `${g.jump} next level` : 'any key: next level';
+      // the card waits for the player now, so the prompt breathes once it is ready
+      const ready = shown > 1 ? 0.7 + 0.25 * Math.sin((shown - 1) * 4) : 0.7;
+      ctx.font = `600 13px ${SANS}`; ctx.fillStyle = `rgba(251,233,200,${ready})`;
       ctx.fillText(`${g.restart} retry  ·  ${cont}`, W / 2, fy + 1);
     }
     ctx.restore();
