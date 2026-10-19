@@ -170,7 +170,8 @@ function write(n, meta, g) {
 }
 
 // ---------------------------------------------------------------- ferries
-// Combines it all: ferries, a lock lift and moths over the water.
+// Combines it all: ferries, a lock lift, moths over the water, and a dripping footbridge
+// over the last canal: pick the ferry that passes under it while it is dry.
 {
   const g = new Grid(150, 22);
   const steps = (xe) => { for (let i = 1; i <= 4; i++) g.ground(xe + i, xe + i, 15 + i); };   // escape stairs from the canal bed
@@ -191,20 +192,19 @@ function write(n, meta, g) {
   // the lock: a lift up to the high quay
   g.entities.push({ type: 'mover', x: 86, y: 15, w: 3, to: [86, 9], period: 5, phase: 0 });
   g.ground(86, 88, 15);
-  g.ground(89, 105, 9).put(94, 8, 'T').put(100, 8, 'l');
+  g.ground(89, 105, 9).put(94, 8, 'l').put(100, 8, 'l');
   g.entities.push({ type: 'moth', x: 97, y: 6, r: 2, period: 5, phase: 0 });
-  // canal 3: one long ferry with a moth sweeping the water
+  // canal 3: one long ferry under a dripping footbridge
   g.ground(106, 123, 20); steps(105);
   g.ground(106, 106, 15);
-  g.put(116, 19, 'K');                                  // keepsake: on the canal bed under the last ferry
+  g.rect(111, 10, 116, 10).rect(113, 10, 114, 10, '~');   // the footbridge drips onto the ferry's path
+  g.put(114, 12, 'K');                                  // keepsake: hangs in the drip. Jump for it from the ferry
   g.entities.push({ type: 'mover', x: 107, y: 15, w: 3, to: [120, 15], period: 7, phase: 0, style: 'boat' });
-  g.entities.push({ type: 'moth', x: 108, y: 13, to: [122, 13], period: 6, phase: 3 });
-  g.sign(102, 8, 'Jump the moth if it comes for you.');
+  g.sign(102, 8, 'The footbridge drips. Pick your ferry.');
   g.ground(124, 127, 15).put(125, 14, 'l');
   // a pit off the landing: bridge it (stairs lead back up if you fall)
   g.ground(128, 128, 17).ground(129, 129, 19).ground(130, 133, 20);
   g.ground(134, 149, 15).put(145, 14, 'G').put(135, 14, 'l').put(142, 14, 'n');
-  g.rect(138, 11, 139, 14);                              // the harbour wall: build over it
   define('ferries', {
     name: 'Night Ferries', hint: 'The ferrymen never wait for you.',
     extra: { theme: 'canal', scene: 'harbour', ambient: 0.9, dark: [[89, 105]] },
@@ -356,11 +356,12 @@ function write(n, meta, g) {
   // rain street
   g.ground(51, 100, 18);
   g.rect(51, 0, 76, 9);
-  g.rect(55, 9, 57, 9, '~').plat(56, 57, 15);
+  g.rect(55, 9, 57, 9, '~').plat(56, 57, 15).put(56, 14, 'P');   // a pumpkin out in the rain
   g.rect(63, 9, 67, 9, '~').rect(64, 15, 66, 15).put(65, 14, 'K');   // keepsake: a ledge under the rain
-  g.rect(72, 9, 73, 9, '~');
-  // cobweb wall and a cliff
-  g.rect(78, 13, 79, 17, 'w');
+  g.rect(72, 9, 73, 9, '~').put(72, 17, 'o');            // the street door's plate, under the rain
+  // the street door and a cliff
+  g.rect(78, 0, 78, 12).rect(78, 13, 78, 17, 'd');
+  g.sign(68, 17, 'The plate is under the rain. Let wax hold it.');
   g.ground(84, 92, 15).put(90, 14, 'b');
   g.put(97, 17, 'T');
   // dark pits
@@ -368,6 +369,7 @@ function write(n, meta, g) {
   g.put(110, 20, '#');                                  // pit escape step
   g.ground(115, 122, 18);
   g.ground(127, 135, 18).put(132, 17, 'T');
+  g.entities.push({ type: 'moth', x: 124, y: 14, r: 2, period: 4.5, phase: 0 });   // the only other light in the dark
   g.put(123, 20, '#');
   // rain + wind run
   g.ground(136, 162, 18);
@@ -393,14 +395,13 @@ function write(n, meta, g) {
   const westStair = (slab) => { g.rect(9, slab, 50, slab).plat(2, 5, slab + 4).plat(5, 8, slab + 2); };
   eastStair(41); westStair(35); eastStair(29); westStair(23); eastStair(17); westStair(11);
   // tier 0 (row 47, walk east): cobwebs and a pumpkin
-  g.rect(20, 42, 21, 46, 'w').put(30, 46, 'P').put(12, 46, 'h');
+  g.rect(20, 42, 21, 46, 'w').put(12, 46, 'h');
   // tier 1 (row 41, walk west): torch, wind pushes east, gaps in the floor
   g.put(38, 40, 'T');
   g.clear(28, 41, 30, 41).clear(16, 41, 18, 41);
   g.fill(20, 36, 36, 40, 'W');
-  g.put(24, 40, 'P');
   // tier 2 (row 35, walk east): rain from tier 3's underside
-  g.put(12, 34, 'T');
+  g.put(12, 34, 'l');
   g.rect(18, 29, 20, 29, '~').rect(28, 29, 31, 29, '~').plat(29, 30, 33).rect(38, 29, 39, 29, '~');
   g.put(34, 34, 'P');
   // tier 3 (row 29, walk west): torch, dark, cobwebs, a 3-high wall
@@ -408,9 +409,11 @@ function write(n, meta, g) {
   g.rect(32, 24, 32, 28, 'w');
   g.rect(18, 26, 23, 28);
   g.put(12, 28, 'P');
-  // tier 4 (row 23, walk east): wind and a gap
-  g.put(12, 22, 'T');
-  g.clear(26, 23, 28, 23);
+  g.entities.push({ type: 'moth', x: 26, y: 26, to: [36, 26], period: 4, phase: 0 });   // a moth works the dark hall
+  // tier 4 (row 23, walk east): a cart across a wide gap, in the gusts
+  g.put(12, 22, 'l');
+  g.clear(24, 23, 33, 23);
+  g.entities.push({ type: 'mover', x: 24, y: 23, w: 3, to: [31, 23], period: 5, phase: 0 });
   g.fill(20, 18, 42, 22, 'W');
   // tier 5 (row 17, walk west): torch, rain
   g.put(38, 16, 'T');
@@ -419,6 +422,8 @@ function write(n, meta, g) {
   // tier 6 (row 11): the battlement, open sky, the great torch
   g.rect(39, 7, 41, 7).put(40, 6, 'K');                    // keepsake: build up over the battlement
   g.rect(24, 8, 27, 10).put(46, 10, 'G').put(16, 10, 'n').put(36, 10, 'n');
+  g.entities.push({ type: 'moth', x: 42, y: 8, r: 1.6, period: 3.5, phase: 1.7 });   // the last moth guards the great torch
+  g.entities.push({ type: 'moth', x: 40, y: 3, r: 1.5, period: 4, phase: 0 });       // and one over the keepsake
   g.entities.push({ type: 'wind', dir: 1, phase: 0 }, { type: 'wind', dir: -1, phase: 1.2 });
   define('castle', {
     name: 'Castle Stair', hint: 'The great torch has waited all night.',
@@ -497,38 +502,44 @@ function write(n, meta, g) {
 }
 
 // ---------------------------------------------------------------- fair
-// New idea: chain reactions. Fire passes from cobweb to fuse to gate.
+// Chain reactions at the fair: a web lights the stall gate, a fuse burns the gate
+// in the cart ride's path (light it, then catch the next cart), a
+// keepsake you leap for from the cart, fire dominoes, and a moth over the stage.
 {
-  const g = new Grid(142, 22);
-  g.ground(0, 141, 19).put(3, 18, 'S');
+  const W = 124;
+  const g = new Grid(W, 26);
+  g.ground(0, W - 1, 19).put(3, 18, 'S');
   g.sign(5, 18, 'Fire spreads. Cobwebs, fuses and gates pass the flame along.');
   // 1. a cobweb clump lights a fuse that climbs over the stall to the gate
   g.rect(9, 17, 10, 18, 'w');
   g.rect(11, 11, 11, 17, 'f').plat(12, 21, 12).rect(12, 11, 21, 11, 'f').rect(21, 12, 21, 14, 'f');
   g.rect(22, 13, 23, 18, 'g').rect(22, 0, 23, 12);
   g.put(15, 18, 'h').put(18, 18, 'b');
-  // 2. an optional vault: its fuse starts up on a ledge
-  g.rect(46, 13, 56, 13).rect(56, 14, 56, 18);
-  g.rect(46, 14, 46, 18, 'g');
-  g.put(50, 18, 'P').put(53, 18, 'P');
-  g.plat(36, 40, 14).rect(37, 13, 45, 13, 'f').put(45, 14, 'f');
-  g.put(36, 14, '#').put(36, 13, 'K');                  // keepsake: at the far end of the fuse ledge
-  g.sign(32, 18, 'A locked vault. Its fuse starts high on the ledge.');
-  g.put(64, 18, 'T').put(61, 18, 'h');
+  // 2. the cart ride: a gate stands in the cart's path. Jump into the rope, then ride.
+  g.clear(28, 19, 44, 23);
+  for (let i = 0; i < 4; i++) g.ground(28 + i, 28 + i, 20 + i);   // steps back to the dock; the far side is a climb
+  g.rect(26, 12, 26, 15, 'f').rect(27, 12, 36, 12, 'f');
+  g.rect(36, 13, 36, 18, 'g');
+  g.entities.push({ type: 'mover', x: 28, y: 19, w: 3, to: [42, 19], period: 6, phase: 0 });
+  g.sign(24, 18, 'The ride runs through that gate. Burn it first.');
+  g.put(33, 14, 'K');                                    // keepsake: over the ride. Leap from the cart and land back on it
   // 3. follow the flame: one fuse burns open three gates ahead of you
-  g.rect(68, 18, 74, 18, 'f');
-  const gates = [75, 88, 101];
+  const X = -14;                                         // (the run starts just past the landing)
+  g.put(X + 68, 18, 'l').put(X + 66, 18, 'h');
+  g.rect(X + 71, 18, X + 74, 18, 'f');
+  const gates = [75, 88, 101].map((x) => x + X);
   gates.forEach((x, i) => {
     g.rect(x, 13, x + 1, 18, 'g').rect(x, 0, x + 1, 12);
     g.rect(x + 2, 18, i < gates.length - 1 ? gates[i + 1] - 1 : x + 6, 18, 'f');   // fuse runs on to the next gate
   });
-  g.sign(66, 18, 'Light the fuse and follow the fire.');
-  g.ground(80, 82, 21).clear(80, 19, 82, 20);      // gaps between the gates
-  g.ground(93, 96, 21).clear(93, 19, 96, 20);
-  // 4. the stage: build up to the great fair torch
-  g.ground(118, 141, 15).put(132, 14, 'G').put(124, 14, 'n').put(138, 14, 'n');
-  g.put(113, 18, 'P');
-  g.sign(114, 18, 'The fair torch waits on the stage. Build your way up.');
+  g.sign(X + 70, 18, 'Light the fuse and follow the fire.');
+  g.clear(X + 80, 19, X + 83, 21).ground(X + 80, X + 80, 21);           // gaps between the gates
+  g.clear(X + 93, 19, X + 96, 21).ground(X + 93, X + 93, 21).put(X + 95, 21, 'P');   // a pumpkin down in the gap
+  // 4. the stage: build up to the great fair torch, under the moth
+  g.ground(X + 114, W - 1, 15).put(X + 128, 14, 'G').put(X + 120, 14, 'n').put(X + 134, 14, 'n');
+  g.entities.push({ type: 'moth', x: X + 113, y: 14, r: 2, period: 4, phase: 0 });
+  g.put(X + 106, 18, 'T');
+  g.sign(X + 108, 18, 'The fair torch waits on the stage. Build your way up.');
   define('fair', {
     name: 'Ember Fair', hint: 'Let the fire do the work.',
     extra: { theme: 'fair', ambient: 0.86 },
@@ -578,16 +589,16 @@ function write(n, meta, g) {
 // Fire puzzles: a fuse out of reach, a race against a burning bridge, and a
 // fuse that starts behind a plate door.
 {
-  const W = 124, H = 26;
+  const W = 116, H = 26;
   const g = new Grid(W, H);
   g.ground(0, W - 1, 19).put(3, 18, 'S');
   // R1. the fuse hangs high: build up to light it
   g.sign(5, 18, 'Gates only burn from a fuse. This fuse hangs high.');
-  g.rect(20, 0, 21, 10).rect(20, 11, 21, 18, 'g');
-  g.rect(19, 6, 19, 11, 'f');
+  g.rect(20, 0, 21, 9).rect(20, 10, 21, 18, 'g');
+  g.rect(19, 5, 19, 10, 'f');
   g.sign(12, 18, 'Build up and touch it with your flame.');
   // R2. the cobweb lights a fuse that runs round to the bridge. Run!
-  g.put(25, 18, 'T').put(28, 18, 'h');
+  g.put(25, 18, 'l').put(28, 18, 'h');
   g.rect(33, 15, 33, 18, 'w');
   g.rect(33, 7, 33, 14, 'f').rect(34, 7, 48, 7, 'f').rect(48, 8, 48, 18, 'f');
   g.sign(30, 18, 'That web feeds the fuse to the bridge. Be quick.');
@@ -595,16 +606,22 @@ function write(n, meta, g) {
   for (let i = 0; i < 4; i++) g.ground(40 + i, 40 + i, 20 + i);   // stairs back up out of the pit
   // R3. the exit fuse starts in a closet behind a plate door
   g.put(53, 18, 'T').put(56, 18, 'h');
-  g.rect(57, 15, 59, 15).put(58, 14, 'K');                  // keepsake: build up to the perch
   g.put(62, 18, 'o');
   g.rect(67, 12, 75, 14);                                // closet roof
+  g.rect(63, 16, 65, 16);                                // a scorched shelf below the roof
+  g.put(71, 11, 'K');                                    // keepsake: shelf, then build up onto the closet roof
   g.rect(67, 15, 67, 18, 'd');                           // closet door
   g.rect(72, 17, 72, 18, 'w').rect(73, 18, 74, 18, 'f'); // web -> fuse -> back gate
   g.rect(75, 15, 75, 18, 'g').rect(75, 0, 75, 11);
   g.sign(59, 18, 'The exit fuse is lit from inside the closet.');
-  g.put(110, 18, 'G').put(84, 18, 'h').put(92, 18, 'h').put(104, 18, 'b');
-  g.rect(98, 15, 99, 18);                                // a scorched wall: climb it
-  g.sign(80, 18, 'Fire did the work.');
+  // R4. two fuses hang over the field: one burns the exit gate, one the bridge. Read the ropes.
+  g.rect(84, 4, 84, 15, 'f').rect(85, 4, 103, 4, 'f').rect(103, 5, 103, 13, 'f');   // -> exit gate
+  g.rect(88, 7, 88, 15, 'f').rect(89, 7, 99, 7, 'f').rect(99, 8, 99, 18, 'f');      // -> the bridge
+  g.rect(104, 0, 104, 12).rect(104, 13, 104, 18, 'g');
+  g.clear(92, 19, 99, 22).rect(92, 19, 99, 19, 'g');
+  g.ground(92, 92, 20).ground(93, 93, 21);               // steps back up on the near side; the far side is a climb
+  g.sign(80, 18, 'Two ropes. Light the one that ends at the gate, then cross.');
+  g.put(110, 18, 'G').put(107, 18, 'n').put(78, 18, 'h');
   define('firebreak', {
     name: 'Firebreak', hint: 'Light the right fuse.',
     extra: { theme: 'harvest', scene: 'scorch', ambient: 0.88 },
@@ -612,10 +629,11 @@ function write(n, meta, g) {
 }
 
 // ---------------------------------------------------------------- clockwork
-// Plates meet moving parts: a door at the top of a lift, a plate under a ferry,
-// and a plate guarded by a moth.
+// Plates meet moving parts: a door at the top of a lift, a plate under a cart (and a
+// second plate for the keepsake vault), then the twist: a door in the cart's own path,
+// opened by dripping on the plates below as you ride over them.
 {
-  const W = 110, H = 22;
+  const W = 100, H = 22;
   const g = new Grid(W, H);
   g.ground(0, 13, 19).put(3, 18, 'S');
   g.rect(1, 14, 12, 14).put(1, 18, 'l').put(11, 18, 'l');   // start under the yard gate's lantern arch
@@ -625,34 +643,38 @@ function write(n, meta, g) {
   g.ground(14, 16, 19);
   g.entities.push({ type: 'mover', x: 14, y: 19, w: 3, to: [14, 11], period: 5, phase: 0 });
   g.ground(17, W - 1, 11);
-  g.put(20, 10, 'T');
+  g.put(20, 10, 'l').put(30, 10, 'T');                    // the torch is past the door, so a respawn never redoes it
   g.rect(26, 0, 26, 7).rect(26, 8, 26, 10, 'd');
-  // R2. the plate is down in the pit; drip from the ferry and let it fall
+  // R2. the plate is down in the pit; drip from the cart and let it fall
   g.clear(41, 11, 56, 16);
   for (let i = 0; i < 4; i++) g.ground(41 + i, 41 + i, 12 + i);
-  g.put(50, 16, 'o').put(55, 16, 'K');                  // keepsake: the far end of the pit
+  g.put(50, 16, 'o');
+  g.put(52, 16, 'o').rect(54, 14, 56, 14).rect(54, 15, 54, 16, 'd').put(55, 16, 'K');   // keepsake: a vault with its own plate
   g.entities.push({ type: 'mover', x: 45, y: 11, w: 3, to: [54, 11], period: 6, phase: 0 });
   g.sign(37, 10, 'Drip from a moving cart and the wax drops straight down.');
   g.rect(62, 0, 62, 7).rect(62, 8, 62, 10, 'd');
-  // R3. a moth circles the last plate
-  g.put(66, 10, 'T');
-  g.put(76, 10, 'o');
-  g.entities.push({ type: 'moth', x: 76, y: 8, r: 2, period: 4, phase: 0 });
-  g.sign(70, 10, 'Wait for the moth to pass.');
-  g.rect(84, 0, 84, 7).rect(84, 8, 84, 10, 'd');
-  g.rect(94, 8, 95, 10);                                 // last wall: build over it
-  g.put(100, 10, 'G').put(90, 10, 'n');
+  // R3. a door in the cart's path. Its plates sit on the pillar below: drip as you pass over.
+  g.put(66, 10, 'l');
+  g.clear(70, 11, 89, 16);
+  for (let i = 0; i < 5; i++) g.ground(74 - i, 74 - i, 16 - i);   // steps back up if you fall
+  g.rect(76, 14, 78, 16).rect(76, 13, 78, 13, 'o');          // three plates on a pillar, one door
+  g.rect(82, 0, 82, 5).rect(82, 6, 82, 10, 'd');
+  g.entities.push({ type: 'mover', x: 70, y: 11, w: 3, to: [87, 11], period: 7, phase: 0 });
+  g.sign(68, 10, 'The door is in the cart\'s way. Its plates are under the ride.');
+  g.rect(93, 8, W - 2, 10).put(96, 7, 'G').put(91, 10, 'n');   // the clock dais: build up to the great torch
   define('clockwork', {
     name: 'Clockwork Yard', hint: 'Every gear keeps its own time.',
-    extra: { theme: 'tower', scene: 'gears', ambient: 0.9 },
+    // plates left to right: R1, R2, the vault, the three R3 plates; doors: R1, vault, R2, R3
+    extra: { theme: 'tower', scene: 'gears', ambient: 0.9, links: [0, 2, 1, 3, 3, 3] },
   }, g);
 }
 
 // ---------------------------------------------------------------- stormmill
 // Mixes rain, plates, lifts and fire: wax holds a plate in the rain, a lift
-// rises through a hatch in the dark, and a fuse hangs over a lift under a drip.
+// rises through a hatch in the dark, a fuse hangs over a lift under a drip, and the
+// storm stair: climb the mill race ledges between the roof's rain curtains.
 {
-  const W = 112, H = 22;
+  const W = 106, H = 22;
   const g = new Grid(W, H);
   g.ground(0, W - 1, 18).ground(1, 5, 16).put(3, 15, 'S');   // start on the miller's stoop
   // R1. a plate under the rain: stand on it and you drown, so let wax hold it
@@ -660,7 +682,7 @@ function write(n, meta, g) {
   g.sign(8, 17, 'Rain on the plate? Wax does not mind the wet.');
   g.rect(13, 8, 15, 8, '~').put(14, 17, 'o');
   g.rect(22, 9, 22, 14).rect(22, 15, 22, 17, 'd');
-  g.put(25, 17, 'T');
+  g.put(25, 17, 'l');
   // R2. the dark millroom: its plate opens the hatch the lift rises through
   g.rect(27, 11, W - 1, 11);                             // upper floor
   g.put(30, 11, '~').put(30, 17, 'o');
@@ -677,8 +699,11 @@ function write(n, meta, g) {
   g.rect(51, 5, 53, 5).put(52, 4, 'K');                    // keepsake: leap from the lift, through the drip
   g.rect(72, 2, 73, 10, 'g');
   g.sign(48, 10, 'Ride up and light the fuse. Mind the drip.');
-  g.rect(88, 7, 89, 10);                                 // the mill race wall: build over it
-  g.put(84, 10, 'h').put(94, 10, 'n').put(104, 10, 'G');
+  // R4. the storm stair: each ledge's far end is under a curtain. Climb while it is dry.
+  g.rect(80, 8, 83, 10).rect(87, 5, W - 1, 10);           // two 3-high climbs: too tall to jump, build them
+  g.rect(82, 1, 83, 1, '~').rect(85, 1, 86, 1, '~').rect(88, 1, 89, 1, '~');
+  g.sign(76, 10, 'The race ledges drip. Climb between the curtains.');
+  g.put(77, 10, 'h').put(98, 4, 'n').put(101, 4, 'G');
   define('stormmill', {
     name: 'Storm Mill', hint: 'The mill never stops turning.',
     extra: { theme: 'rain', scene: 'waterwheel', ambient: 0.9, dark: [[23, 12, 39, 17]] },
@@ -687,9 +712,10 @@ function write(n, meta, g) {
 
 // ---------------------------------------------------------------- galelocks
 // Mixes wind, plates and fire: hold a plate and ride a tailwind through its
-// door, hold a plate out on a post in a headwind, and race a burning bridge.
+// door, hold a plate out on a post in a headwind, race a burning bridge, then ride the
+// lock lift up through the gusts: walk into the wind to stay aboard.
 {
-  const W = 124, H = 20;
+  const W = 106, H = 20;
   const g = new Grid(W, H);
   g.ground(0, 20, 14).rect(1, 7, 6, 7).put(3, 6, 'S').put(5, 6, 'n');   // start high on the lock-keeper's ledge
   g.ground(21, 83, 18);                                  // valley floor
@@ -703,8 +729,8 @@ function write(n, meta, g) {
   deck(27, 44);                                          // gap 21-26
   g.fill(14, 5, 30, 13, 'W');
   door(34);
-  g.put(38, 13, 'T');
-  g.put(25, 17, 'K');                                   // keepsake: down in the valley under the leap
+  g.put(38, 13, 'l');
+  g.rect(29, 10, 30, 10).put(30, 9, 'K');               // keepsake: a perch over the leap, built up to in the gusts
   // R2. a plate on a post in a headwind
   for (const x of [48, 51, 54]) g.rect(x, 14, x, 17);
   g.put(54, 13, 'o');
@@ -719,13 +745,19 @@ function write(n, meta, g) {
   g.rect(71, 14, 82, 14, 'g');                           // the bridge
   g.fill(70, 5, 82, 13, 'W');
   g.sign(66, 13, 'The bridge burns from the far end. Mind the gusts.');
-  g.ground(84, W - 1, 14).put(116, 13, 'G').put(92, 13, 'b').put(102, 13, 'n');
-  g.rect(108, 11, 109, 13);                              // the lock gate wall: build over it
+  g.ground(84, 89, 14).put(86, 13, 'b');
+  // R4. the lock lift rises through a headwind: walk into the gust to stay aboard
+  g.ground(90, 92, 14);
+  g.entities.push({ type: 'mover', x: 90, y: 14, w: 3, to: [90, 5], period: 6, phase: 0 });
+  g.ground(93, W - 1, 5).put(100, 4, 'G').put(96, 4, 'n');
+  g.fill(86, 0, 92, 13, 'W');
+  g.sign(85, 13, 'The lock lift. When the leaves swirl, walk into the wind.');
   for (const x of [21, 45, 55]) g.rect(x, 16, x, 17);    // escape steps
   g.entities.push(
     { type: 'wind', dir: 1, phase: 0 },
     { type: 'wind', dir: -1, phase: 1.5 },
     { type: 'wind', dir: -1, gust: 1.2, calm: 3.4, phase: 0.6 },
+    { type: 'wind', dir: -1, gust: 1.4, calm: 3.2, phase: 2.0 },
   );
   define('galelocks', {
     name: 'Gale Locks', hint: 'Wax holds fast. The wind carries.',
@@ -735,7 +767,8 @@ function write(n, meta, g) {
 
 // ---------------------------------------------------------------- mothmill
 // Mixes moths, plates and moving parts: a plate under a moth's loop opens a
-// door a cart passes through; a plate up a lift opens a door at its foot.
+// door a cart passes through; a plate up a lift opens a door at its foot; two carts
+// through the dark with moths at the change-over; a moth circling the last climb.
 {
   const W = 116, H = 22;
   const g = new Grid(W, H);
@@ -755,13 +788,18 @@ function write(n, meta, g) {
   g.rect(59, 7, 60, 7).put(60, 6, 'K');                 // keepsake: up past the plate, by the moth
   g.rect(63, 0, 63, 14).rect(63, 15, 63, 17, 'd');
   g.sign(44, 17, 'The plate is up top. Its door is down here.');
-  // R3. a cart across a dark lane, with a moth on the water
-  g.put(67, 17, 'T');
+  // R3. two carts across the dark lane: change over at the post, between the moths
+  g.put(67, 17, 'l');
   g.ground(72, 93, 21).ground(72, 72, 19).ground(73, 73, 20);
-  g.entities.push({ type: 'mover', x: 72, y: 18, w: 3, to: [91, 18], period: 7, phase: 0 });
-  g.entities.push({ type: 'moth', x: 82, y: 15, r: 2.5, period: 5, phase: 0 });
+  g.rect(84, 18, 85, 20).put(85, 17, 'L');              // the change-over post, with a lantern
+  g.entities.push({ type: 'mover', x: 72, y: 18, w: 3, to: [80, 18], period: 5, phase: 0 });
+  g.entities.push({ type: 'mover', x: 86, y: 18, w: 3, to: [91, 18], period: 5, phase: 2.5 });
+  g.entities.push({ type: 'moth', x: 78, y: 15, r: 2, period: 4, phase: 0 });
+  g.entities.push({ type: 'moth', x: 84, y: 11, to: [84, 16], period: 3, phase: 0 });
+  g.sign(69, 17, 'Two carts in the dark. Change over at the post.');
   g.ground(94, W - 1, 18).put(97, 17, 'h').put(104, 17, 'n').put(108, 17, 'G');
-  g.rect(100, 13, 101, 17);                              // the mill wall: drip up it
+  g.rect(100, 13, 101, 17);                              // the mill wall: drip up it, under the moth
+  g.entities.push({ type: 'moth', x: 100, y: 11, r: 1.8, period: 4, phase: 1 });
   define('mothmill', {
     name: 'Moth Mill', hint: 'The moths work the night shift.',
     extra: { theme: 'violet', scene: 'mothmoon', ambient: 0.88, dark: [[70, 0, 95, 21]] },
@@ -774,9 +812,9 @@ function write(n, meta, g) {
 // Torches not listed use CFG.RESPAWN_MIN (40). Recompute after changing a level.
 const TORCH_FLOORS = {
   market: [40, 65, 40], canal: [70, 65], windy: [50, 40], lifts: [40, 75], rain: [55, 60],
-  works: [55, 60], tower: [55, 70, 80], moths: [40, 40, 70], hay: [70, 40, 60], firebreak: [40, 60],
-  fair: [50], ferries: [75, 40, 40], clockwork: [65, 40], stormmill: [55, 40], galelocks: [50, 40],
-  mothmill: [40, 55], cold: [55, 50], castle: [55, 60, 60, 40, 40],
+  works: [55, 60], tower: [55, 70, 80], moths: [40, 40, 70], hay: [70, 40, 60], firebreak: [55],
+  fair: [50], ferries: [40, 75], clockwork: [75], stormmill: [75], galelocks: [45],
+  mothmill: [65], cold: [55, 50], castle: [65, 80, 80],
 };
 // Medal targets from the recorded hazard routes (tools/_routes): time ~1.35x the bot's,
 // rounded up to 5s; wax = the bot's finish minus 10 (at least 5).
@@ -784,9 +822,9 @@ const PAR = {
   market: { time: 40, wax: 48 }, canal: { time: 50, wax: 29 }, windy: { time: 60, wax: 46 },
   lifts: { time: 60, wax: 28 }, rain: { time: 70, wax: 32 }, works: { time: 35, wax: 28 },
   tower: { time: 55, wax: 28 }, moths: { time: 50, wax: 33 }, hay: { time: 90, wax: 31 },
-  firebreak: { time: 50, wax: 28 }, fair: { time: 45, wax: 20 }, ferries: { time: 70, wax: 25 },
-  clockwork: { time: 50, wax: 25 }, stormmill: { time: 50, wax: 29 }, galelocks: { time: 45, wax: 29 },
-  mothmill: { time: 50, wax: 39 }, cold: { time: 75, wax: 10 }, castle: { time: 110, wax: 28 },
+  firebreak: { time: 45, wax: 17 }, fair: { time: 50, wax: 23 }, ferries: { time: 70, wax: 20 },
+  clockwork: { time: 50, wax: 18 }, stormmill: { time: 50, wax: 17 }, galelocks: { time: 40, wax: 17 },
+  mothmill: { time: 55, wax: 9 }, cold: { time: 65, wax: 11 }, castle: { time: 100, wax: 6 },
 };
 
 // ---------------------------------------------------------------- write, in play order

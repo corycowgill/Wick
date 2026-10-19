@@ -205,7 +205,7 @@ export function search(levelData, opts = {}) {
   const progs = programs({ drip: opts.drip !== false, hazards: CLOCKED, puzzle: PUZZLE, soaking: !!opts.soak });
   const nT = world.torches.length, nP = world.pumpkins.length;
 
-  // fuse/gate handling: each state remembers the fuses it lit ([cell, time]).
+  // fuse/gate handling: each state remembers the fuses it lit ([cell, frame]).
   // opened: flammable -> { ign, gone } times. Without hazards, gone at once.
   const netCache = new Map();
   const openedFor = (fires) => {
@@ -213,36 +213,67 @@ export function search(levelData, opts = {}) {
     let o = netCache.get(k);
     if (!o) {
       o = new Map();
-      for (const [cell, t] of fires || []) openNetwork(o, world.flammables.get(cell), t);
+      const byNet = new Map();
+      for (const [cell, t] of fires || []) {
+        const id = netOf.get(cell);
+        if (!byNet.has(id)) byNet.set(id, []);
+        byNet.get(id).push([world.flammables.get(cell), t]);
+      }
+      for (const seeds of byNet.values()) openNetwork(o, seeds);
       if (netCache.size > 5000) netCache.clear();
       netCache.set(k, o);
     }
     return o;
   };
+  // now: the frame index the next move starts on (hazards), or Infinity (fires done at once)
   const applyOpened = (opened, now = Infinity) => {
     for (const f of world.flammables.values()) {
       const o = opened.get(f);
-      if (!o || now < o.ign) continue;
-      if (now >= o.gone) { f.state = 'gone'; if (f.solid) world.clearCell(f.tx, f.ty); continue; }
-      // still burning at this moment: resume the fire where it is
-      f.state = 'burning'; f.t = now - o.ign; f.spreadDone = f.t >= f.spread;
+      if (!o || o.ign > now - 1) continue;
+      if (o.gone <= now - 1) { f.state = 'gone'; if (f.solid) world.clearCell(f.tx, f.ty); continue; }
+      // still burning at this moment: resume the fire where it is (t summed frame by frame, as the game does)
+      let t = 0;
+      for (let k = o.from; k < now; k++) t += DT;
+      f.state = 'burning'; f.t = t; f.spreadDone = t >= f.spread;
     }
   };
-  const openNetwork = (opened, start, t0 = 0) => {
-    // earliest-arrival spread along the network, so each cell burns out after the fire reaches it
-    const q = [[start, t0]];
-    const seen = new Map([[start, t0]]);
-    while (q.length) {
-      q.sort((a, b) => a[1] - b[1]);
-      const [f, t] = q.shift();
-      const gone = HZ ? t + f.burn : 0;
-      const prev = opened.get(f);
-      if (!prev || prev.gone > gone) opened.set(f, { ign: HZ ? t : 0, gone });
-      for (const [dx, dy] of [[1, 0], [-1, 0], [0, 1], [0, -1]]) {
-        const n = world.flammables.get((f.ty + dy) * world.w + f.tx + dx);
-        const tn = t + f.spread;
-        if (n && (!seen.has(n) || seen.get(n) > tn)) { seen.set(n, tn); q.push([n, tn]); }
+  // Fire through a network from `start`, lit on frame t0. With hazards this replays the game's own
+  // frame loop (Flammable.update, cells in parse order, so fire passed to a later cell burns on that
+  // same frame): ign = frame lit, from = first frame it burns, gone = frame it burnt out. Without
+  // hazards everything is gone at once.
+  const openNetwork = (opened, seeds) => {
+    const [start] = seeds[0];
+    const cells = netCells.get(netOf.get(start.ty * world.w + start.tx));
+    if (!HZ) {
+      for (const f of cells) opened.set(f, { ign: -Infinity, from: 0, gone: -Infinity });
+      return;
+    }
+    const st = new Map();
+    const t0 = Math.min(...seeds.map((x) => x[1]));
+    for (let k = t0, active = true; active || seeds.some((x) => x[1] > k - 1); k++) {
+      // the flame lights its cells while Wick moves, before the world (and the fire) updates
+      for (const [f, t] of seeds) if (t === k && !st.has(f)) st.set(f, { t: 0, sd: false, ign: k, from: k, gone: Infinity, burning: true });
+      active = false;
+      for (const f of cells) {
+        const c = st.get(f);
+        if (!c || !c.burning) continue;
+        active = true;
+        c.t += DT;
+        if (!c.sd && c.t >= f.spread) {
+          c.sd = true;
+          const kf = f.ty * world.w + f.tx;
+          for (const [dx, dy] of [[1, 0], [-1, 0], [0, 1], [0, -1]]) {
+            const kn = (f.ty + dy) * world.w + f.tx + dx;
+            const n = world.flammables.get(kn);
+            if (n && !st.has(n)) st.set(n, { t: 0, sd: false, ign: k, from: kn > kf ? k : k + 1, gone: Infinity, burning: true });
+          }
+        }
+        if (c.t >= f.burn) { c.burning = false; c.gone = k; }
       }
+    }
+    for (const [f, c] of st) {
+      const prev = opened.get(f);
+      if (!prev || prev.gone > c.gone) opened.set(f, { ign: c.ign, from: c.from, gone: c.gone });
     }
   };
 
@@ -274,6 +305,12 @@ export function search(levelData, opts = {}) {
     }
     const id = Math.min(...comp);
     for (const c of comp) netOf.set(c, id);
+  }
+  const netCells = new Map();
+  for (const [cell, f] of [...world.flammables].sort((a, b) => a[0] - b[0])) {
+    const id = netOf.get(cell);
+    if (!netCells.has(id)) netCells.set(id, []);
+    netCells.get(id).push(f);
   }
   const firesKey = (fires) => [...new Set((fires || []).map((x) => netOf.get(x[0])))].sort((a, b) => a - b).join('.');
 
@@ -327,7 +364,7 @@ export function search(levelData, opts = {}) {
 
     for (const [name, prog, cost] of progs) {
       world.restore(base);
-      applyOpened(openedFor(s.fires), HZ ? s.time : Infinity);
+      applyOpened(openedFor(s.fires), HZ ? s.fc : Infinity);
       if (CLOCKED) {
         // hazards and platforms on the real clock; refresh their on/off state now, because the player
         // reads it before the next world update would
@@ -356,14 +393,17 @@ export function search(levelData, opts = {}) {
       let f = 0, done = false, ok = false;
       sims++;
       const ignitedFuses = [];
-      world.onIgnite = (fl) => { ignitedFuses.push([fl, s.time + f * DT]); };
+      let touching = false;   // ignitions while Wick moves are the flame's own; the rest is spread
+      world.onIgnite = (fl) => { if (touching || !HZ) ignitedFuses.push([fl, s.fc + f]); };
       const rec = opts.record ? [] : null;
       while (f < 60 * 6) {
         const input = done ? inp() : prog(player, world, f, mem);
         if (!input) { done = true; }
         const i = input || inp();
         if (rec) rec.push(Math.round(i.moveX * 100), (i.jumpHeld ? 1 : 0) | (i.jumpPressed ? 2 : 0) | (i.dripPressed ? 4 : 0) | (i.reabsorbPressed ? 8 : 0));
+        touching = true;
         player.update(DT, i, world);
+        touching = false;
         world.update(DT, player);
         f++;
         if (!player.alive) break;
@@ -371,15 +411,16 @@ export function search(levelData, opts = {}) {
         // settled: on the ground and at rest, so the next move starts exactly where this one ended
         if (done && player.onGround && player.vy === 0 && (!rec || (player.vx === 0 && player.windVx === 0))) { ok = true; break; }
       }
-      // fuses this move lit (one per network is enough: the rest is the spread)
+      // fuses this move lit. Without hazards one per network is enough (it all burns at once); with
+      // hazards every cell the flame itself lit is kept, with its frame (the rest is the spread)
       let fires = s.fires || [];
       if (ignitedFuses.length) {
-        let known = openedFor(fires);
+        const known = HZ ? null : new Map(openedFor(fires));
         fires = [...fires];
         for (const [fl, t] of ignitedFuses) {
-          if (known.has(fl)) continue;
+          if (known && known.has(fl)) continue;
           fires.push([fl.ty * world.w + fl.tx, t]);
-          openNetwork(known = new Map(known), fl, t);
+          if (known) openNetwork(known, [[fl, t]]);
         }
       }
       if (!ok || !player.alive) continue;
