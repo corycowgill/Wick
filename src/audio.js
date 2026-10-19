@@ -151,7 +151,64 @@ function buildFlame() {
   flame = { src, bp, lp, g, lfo, level: 0 };
 }
 
+// Wick's voice: a sawtooth through a moving mouth formant, so it opens like a real "mew".
+// pitch and formant each go start -> peak -> end; trill flutters it into a rolled "mrrp".
+let lastVoice = -9;
+function meow(t, f0, f1, f2, dur, vol, m0, m1, m2, trill = 0) {
+  const o = ctx.createOscillator();
+  o.type = 'sawtooth';
+  o.frequency.setValueAtTime(f0, t);
+  o.frequency.linearRampToValueAtTime(f1, t + dur * 0.35);
+  o.frequency.linearRampToValueAtTime(f2, t + dur);
+  const mouth = ctx.createBiquadFilter();
+  mouth.type = 'bandpass'; mouth.Q.value = 2.5;
+  mouth.frequency.setValueAtTime(m0, t);
+  mouth.frequency.linearRampToValueAtTime(m1, t + dur * 0.35);
+  mouth.frequency.linearRampToValueAtTime(m2, t + dur);
+  const soft = ctx.createBiquadFilter();
+  soft.type = 'lowpass'; soft.frequency.value = 3200;
+  const g = ctx.createGain();
+  g.gain.setValueAtTime(0.0001, t);
+  g.gain.linearRampToValueAtTime(vol, t + 0.03);
+  g.gain.setValueAtTime(vol * 0.85, t + dur * 0.7);
+  g.gain.exponentialRampToValueAtTime(0.0001, t + dur);
+  o.connect(mouth).connect(soft).connect(g);
+  let out = g;
+  if (trill) {
+    const am = ctx.createGain(); am.gain.value = 0.55;
+    const l = ctx.createOscillator(); l.type = 'square'; l.frequency.value = trill;
+    const d = ctx.createGain(); d.gain.value = 0.45;
+    l.connect(d).connect(am.gain);
+    g.connect(am); out = am;
+    l.start(t); l.stop(t + dur + 0.05);
+  }
+  out.connect(sfxBus);
+  o.start(t); o.stop(t + dur + 0.05);
+}
+
+// purring: low noise throbbing at ~25 Hz with a slow breath in and out. Kept alive by
+// Audio.purr each play frame; it fades by itself when the calls stop (pause, menus).
+let purrNode = null, purrSeen = 0;
+function buildPurr() {
+  const src = ctx.createBufferSource();
+  src.buffer = noiseBuf; src.loop = true;
+  const lp = ctx.createBiquadFilter();
+  lp.type = 'lowpass'; lp.frequency.value = 380; lp.Q.value = 1.2;
+  const am = ctx.createGain(); am.gain.value = 0.5;
+  const throb = ctx.createOscillator(); throb.type = 'triangle'; throb.frequency.value = 25;
+  const depth = ctx.createGain(); depth.gain.value = 0.5;
+  throb.connect(depth).connect(am.gain);
+  const breath = ctx.createOscillator(); breath.frequency.value = 0.8;
+  const bd = ctx.createGain(); bd.gain.value = 3;
+  breath.connect(bd).connect(throb.frequency);
+  const g = ctx.createGain(); g.gain.value = 0;
+  src.connect(lp).connect(am).connect(g).connect(sfxBus);
+  src.start(); throb.start(); breath.start();
+  purrNode = { g };
+}
+
 function schedule() {
+  if (purrNode && now() - purrSeen > 0.2) purrNode.g.gain.setTargetAtTime(0, now(), 0.15);
   if (!ctx || musicState === 'off' || musicTrack) return;
   const bpm = musicState === 'title' ? 66 : musicState === 'end' ? 92 : 62 + 44 * tempoFrac;
   const stepDur = 60 / bpm / 2;                          // eighth notes
@@ -263,6 +320,14 @@ export const Audio = {
     tone('sine', 64, 42, 0.14, vol * 0.7, sfxBus, t + 0.2, 0.012);
     noise(0.07, 0.015 + 0.01 * k, 'lowpass', 260, 90, 0.7, t);
     nextBeat = t + 1.15 - 0.5 * k;
+  },
+
+  // Wick purring (0..1): call every play frame, it falls silent on its own when the calls stop
+  purr(level) {
+    if (!ctx || ctx.state !== 'running') return;
+    if (!purrNode) { if (level <= 0.01) return; buildPurr(); }
+    purrSeen = now();
+    purrNode.g.gain.setTargetAtTime(muted ? 0 : level * 0.2, purrSeen, 0.25);
   },
 
   // the pause menu muffles the music and pulls it back, so the menu reads as a break
@@ -418,6 +483,20 @@ export const Audio = {
         // wingbeats close by
         for (let i = 0; i < 6; i++) noise(0.03, 0.045 * (opts.vol ?? 1), 'bandpass', 700, 1100, 2.5, t + i * 0.042);
         break;
+      case 'mew': case 'mrrp': case 'chirp': case 'yawn': case 'chatter': {
+        // Wick's voice: soft, short and never more than one at a time
+        if (t - lastVoice < 0.9) return;
+        lastVoice = t;
+        const v = t + (opts.delay ?? 0);
+        if (name === 'mew') meow(v, 720, 980, 640, 0.3, 0.1, 1100, 2300, 1000);                 // indignant
+        else if (name === 'mrrp') meow(v, 380, 400, 600, 0.26, 0.14, 650, 900, 1700, 30);        // "mrrp?"
+        else if (name === 'chirp') meow(v, 540, 780, 720, 0.17, 0.15, 1000, 2200, 1800, 36);     // happy trill
+        else if (name === 'yawn') {
+          meow(v, 560, 700, 300, 0.8, 0.08, 700, 1700, 450);
+          noise(0.7, 0.025, 'bandpass', 1400, 500, 0.8, v + 0.1);
+        } else for (let i = 0; i < 6; i++) tone('triangle', 1300, 950, 0.03, 0.06, sfxBus, v + i * 0.06, 0.003);   // ek-ek-ek
+        break;
+      }
       case 'menu':
         tone('triangle', 520, 520, 0.06, 0.07);
         break;

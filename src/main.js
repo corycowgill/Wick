@@ -12,7 +12,7 @@ import {
   drawTileGlows, drawMist, drawForeground, themeOf, drawDripGuide, drawDecor, drawDecorGlows,
   drawJumpShadow, drawLightDetail, drawWindStreaks, THEMES,
 } from './render/draw-world.js';
-import { drawWick, drawWickFx, drawWickRim, wickMood } from './render/draw-wick.js';
+import { drawWick, drawWickFx, drawWickRim, wickMood, wickNudge, wickKnead, wickPurr } from './render/draw-wick.js';
 import { Particles } from './render/particles.js';
 import { Audio } from './audio.js';
 import { UI } from './ui.js';
@@ -248,7 +248,7 @@ window.addEventListener('blur', () => { if (state.scene === 'play' && !DEBUG) st
 // ---------------------------------------------------------------- events -> juice
 const P = state.particles;
 const shake = (amount) => { if (Settings.get().shake) state.camera.shake(amount); };
-Events.on('jump', (e) => { Audio.sfx('jump', e); P.dust(e.x, e.y, 4, 0.6); if (state.help) { const j = state.help.jumps; j.push({ t: state.levelStats.time, x: e.x }); if (j.length > 20) j.shift(); } });
+Events.on('jump', (e) => { wickNudge(); Audio.sfx('jump', e); P.dust(e.x, e.y, 4, 0.6); if (state.help) { const j = state.help.jumps; j.push({ t: state.levelStats.time, x: e.x }); if (j.length > 20) j.shift(); } });
 Events.on('land', (e) => {
   Audio.sfx('land', e);
   P.dust(e.x, e.y, 6 + (e.hard * 6 | 0), 0.6 + e.hard);
@@ -256,18 +256,20 @@ Events.on('land', (e) => {
   if (e.hard > 0.15) P.shock(e.x, e.y, e.hard);
   if (e.frac > 0.85 && e.hard > 0.2) Input.gamepad.rumble('land');
 });
-Events.on('drip', (e) => { Audio.sfx('drip'); P.splat(e.x, e.y); state.stats.drips++; });
+Events.on('drip', (e) => { wickNudge(); Audio.sfx('drip'); P.splat(e.x, e.y); state.stats.drips++; });
 Events.on('dripFail', (e) => {
+  wickNudge();
   Audio.sfx('dripFail');
   state.hudFail = 1;
   P.smoke(e.x, e.y + 4, 3);
   if (e.reason === 'wax') UI.toast('Not enough wax to drip', 1.4);
 });
-Events.on('reabsorb', (e) => { Audio.sfx('reabsorb'); P.absorb(e.x, e.y, e.tx, e.ty); });
+Events.on('reabsorb', (e) => { wickNudge(); Audio.sfx('reabsorb'); P.absorb(e.x, e.y, e.tx, e.ty); });
 Events.on('melt', (e) => { Audio.sfx('melt'); P.splat(e.x, e.y - 4, 4); });
 Events.on('relight', (e) => {
   wickMood('joy', 1.4);
   Audio.sfx('relight');
+  Audio.sfx('chirp', { delay: 0.45 });
   P.sparks(e.x, e.y, 26, 220);
   P.ring(e.x, e.y, 170);
   P.pillar(e.x, e.y + 8);
@@ -300,6 +302,7 @@ Events.on('door', (e) => { if (e.open) wickMood('surprise', 0.6); Audio.sfx('doo
 Events.on('moth', (e) => {
   wickMood('ouch', 0.7);
   Audio.sfx('moth');
+  Audio.sfx('mew', { delay: 0.12 });
   state.hudFail = 1;
   P.sparks(e.x, e.y, 10, 120, '255,230,190');
   P.smoke(e.x, e.y, 4);
@@ -353,6 +356,7 @@ function noteDeath(e) {
 }
 Events.on('levelComplete', (e) => {
   wickMood('joy', 3);
+  wickKnead(3);
   Audio.sfx('complete');
   P.sparks(e.x, e.y, 60, 320);
   P.ring(e.x, e.y, 320);
@@ -811,6 +815,7 @@ function update(dt) {
   Input.touch.setEnabled('drip', player.canAffordDrip());
   if (player.alive) state.iris = Math.min(1, state.iris + dt * 3);
   Audio.setFlame(player.waxFrac(), player.alive);
+  Audio.purr(wickPurr());
   Audio.setTempo(player.waxFrac());
   Audio.heartbeat(player.waxFrac(), player.alive && !state.completeTimer);
 }
@@ -885,7 +890,7 @@ function renderPlay(t) {
   if (!state.completeTimer) {
     drawDripGuide(ctx, player, world, t, { absorbGlyph: UI.glyphs(Input.lastDevice).absorb });
   }
-  drawWick(ctx, player, t, { world });
+  drawWick(ctx, player, t, { world, input, quality: state.quality });
   drawMoths(ctx, cam, world, t);
   drawMist(ctx, cam, world, t);
   ctx.restore();
