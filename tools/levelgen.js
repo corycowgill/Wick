@@ -113,16 +113,17 @@ function write(n, meta, g) {
   g.sign(33, 17, 'Wait for the lift to come down.');
   g.rect(41, 10, 60, 12).put(47, 9, 'T').put(56, 9, 'n');
   // 3. two carts over the lane, meeting at a hanging post
-  g.rect(74, 10, 75, 11);
+  g.rect(74, 10, 75, 11).put(74, 9, 'T');                // the torch waits on the post, halfway over the dark
   g.put(82, 17, 'K');                                   // keepsake: down in the dark lane; the lift is the way back
   g.entities.push({ type: 'mover', x: 61, y: 10, w: 3, to: [71, 10], period: 5, phase: 0 });
   g.entities.push({ type: 'mover', x: 76, y: 10, w: 3, to: [87, 10], period: 5, phase: 2.5 });
   g.sign(58, 9, 'Two carts meet at the post. Change over there.');
-  g.ground(91, 107, 10).put(96, 9, 'T').put(102, 9, 'k').put(99, 9, 'h');
+  g.ground(91, 107, 10).put(102, 9, 'k').put(99, 9, 'h');
   // 4. a lift that stops short: jump the last bit
   g.entities.push({ type: 'mover', x: 108, y: 10, w: 3, to: [108, 6], period: 4, phase: 1 });
-  g.ground(111, 139, 4).put(133, 3, 'G').put(118, 3, 'n').put(128, 3, 'h');
+  g.ground(111, 139, 4).put(133, 3, 'G').put(118, 3, 'n').put(137, 3, 'h');
   g.rect(122, 0, 123, 3);                                // the granary wall: build over it
+  g.clear(126, 4, 129, 6);                               // then the grain chute: bridge it, or climb out
   g.sign(104, 9, 'This lift stops short. Jump the rest.');
   define('lifts', {
     name: 'Harvest Lifts', hint: 'Ride the carts and lifts.',
@@ -199,8 +200,11 @@ function write(n, meta, g) {
   g.entities.push({ type: 'mover', x: 107, y: 15, w: 3, to: [120, 15], period: 7, phase: 0, style: 'boat' });
   g.entities.push({ type: 'moth', x: 108, y: 13, to: [122, 13], period: 6, phase: 3 });
   g.sign(102, 8, 'Jump the moth if it comes for you.');
-  g.ground(124, 149, 15).put(142, 14, 'G').put(128, 14, 'l').put(138, 14, 'n');
-  g.rect(132, 11, 133, 14);                              // the harbour wall: build over it
+  g.ground(124, 127, 15).put(125, 14, 'l');
+  // a pit off the landing: bridge it (stairs lead back up if you fall)
+  g.ground(128, 128, 17).ground(129, 129, 19).ground(130, 133, 20);
+  g.ground(134, 149, 15).put(145, 14, 'G').put(135, 14, 'l').put(142, 14, 'n');
+  g.rect(138, 11, 139, 14);                              // the harbour wall: build over it
   define('ferries', {
     name: 'Night Ferries', hint: 'The ferrymen never wait for you.',
     extra: { theme: 'canal', scene: 'harbour', ambient: 0.9, dark: [[89, 105]] },
@@ -324,9 +328,8 @@ function write(n, meta, g) {
   g.put(92, 16, 'h');
   // climb to floor C through a hole in slab C
   g.rect(1, 11, 63, 11).rect(71, 11, 118, 11);          // slab C
-  g.plat(66, 68, 15).plat(64, 66, 13);
+  g.plat(66, 68, 15).plat(64, 66, 13).put(71, 16, 'T');   // the last torch: light it before the climb
   // floor C: hanging fuse burns gate C, goal behind it
-  g.put(58, 10, 'T');
   g.rect(50, 6, 51, 10, 'w');
   g.rect(44, 8, 45, 10);                                // a packed bale wall: build over it
   g.put(40, 10, 'k');
@@ -334,6 +337,7 @@ function write(n, meta, g) {
   g.rect(26, 8, 40, 8, 'f');
   g.sign(30, 10, 'Jump to reach the fuse.');
   g.put(8, 10, 'G').put(14, 10, 'h').put(16, 10, 'b');
+  g.rect(19, 9, 20, 10);                                // a low bale by the door: a hop, or a step if your wax is low
   g.put(90, 10, 'K').put(84, 10, 'h');                  // keepsake: down the far end of the loft
   define('hay', { name: 'Hay Maze', hint: 'Burn a path open.', extra: { theme: 'barn', ambient: 0.88 } }, g);
 }
@@ -769,18 +773,18 @@ function write(n, meta, g) {
 // the hazard bot needs to reach the next torch from it (+5 spare), torches in row-major order.
 // Torches not listed use CFG.RESPAWN_MIN (40). Recompute after changing a level.
 const TORCH_FLOORS = {
-  market: [40, 65, 40], canal: [70, 65], windy: [50, 40], lifts: [40, 55], rain: [55, 60],
-  works: [55, 60], tower: [55, 70, 80], moths: [40, 40, 70], hay: [40, 55, 60], firebreak: [40, 60],
-  fair: [50], ferries: [60, 40, 40], clockwork: [65, 40], stormmill: [55, 40], galelocks: [50, 40],
+  market: [40, 65, 40], canal: [70, 65], windy: [50, 40], lifts: [40, 75], rain: [55, 60],
+  works: [55, 60], tower: [55, 70, 80], moths: [40, 40, 70], hay: [70, 40, 60], firebreak: [40, 60],
+  fair: [50], ferries: [75, 40, 40], clockwork: [65, 40], stormmill: [55, 40], galelocks: [50, 40],
   mothmill: [40, 55], cold: [55, 50], castle: [55, 60, 60, 40, 40],
 };
 // Medal targets from the recorded hazard routes (tools/_routes): time ~1.35x the bot's,
 // rounded up to 5s; wax = the bot's finish minus 10 (at least 5).
 const PAR = {
   market: { time: 40, wax: 48 }, canal: { time: 50, wax: 29 }, windy: { time: 60, wax: 46 },
-  lifts: { time: 55, wax: 45 }, rain: { time: 70, wax: 32 }, works: { time: 35, wax: 28 },
-  tower: { time: 55, wax: 28 }, moths: { time: 50, wax: 33 }, hay: { time: 75, wax: 43 },
-  firebreak: { time: 50, wax: 28 }, fair: { time: 45, wax: 20 }, ferries: { time: 70, wax: 34 },
+  lifts: { time: 60, wax: 28 }, rain: { time: 70, wax: 32 }, works: { time: 35, wax: 28 },
+  tower: { time: 55, wax: 28 }, moths: { time: 50, wax: 33 }, hay: { time: 90, wax: 31 },
+  firebreak: { time: 50, wax: 28 }, fair: { time: 45, wax: 20 }, ferries: { time: 70, wax: 25 },
   clockwork: { time: 50, wax: 25 }, stormmill: { time: 50, wax: 29 }, galelocks: { time: 45, wax: 29 },
   mothmill: { time: 50, wax: 39 }, cold: { time: 75, wax: 10 }, castle: { time: 110, wax: 28 },
 };

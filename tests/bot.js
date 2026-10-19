@@ -185,6 +185,14 @@ export function search(levelData, opts = {}) {
     world.windAt = () => 0;
     world.wetAt = () => false;
     world.mothHit = () => null;
+    // harmless now: skip flying the moths and raining the curtains
+    for (const e of world.entities) if (e.type === 'moth' || e.type === 'drip') e.update = () => {};
+  } else {
+    // rain drops are only drawn: drop them at once (the curtain's on/off clock is all that wets)
+    for (const e of world.emitters) {
+      const update = e.update.bind(e);
+      e.update = (dt, w) => { update(dt, w); e.drops.length = 0; };
+    }
   }
   const player = new Player();
   let arrivalWax = null;
@@ -249,18 +257,55 @@ export function search(levelData, opts = {}) {
   const torchHits = [];
   let sims = 0;
 
+  // fuse networks: fire spreads through every connected flammable, so a state's fires are
+  // keyed by network (lowest cell of each), not by whichever cell happened to catch first
+  const netOf = new Map();
+  for (const [cell, f0] of world.flammables) {
+    if (netOf.has(cell)) continue;
+    const comp = [cell], q = [f0];
+    netOf.set(cell, -1);
+    while (q.length) {
+      const f = q.pop();
+      for (const [dx, dy] of [[1, 0], [-1, 0], [0, 1], [0, -1]]) {
+        const c = (f.ty + dy) * world.w + f.tx + dx;
+        const n = world.flammables.get(c);
+        if (n && !netOf.has(c)) { netOf.set(c, -1); comp.push(c); q.push(n); }
+      }
+    }
+    const id = Math.min(...comp);
+    for (const c of comp) netOf.set(c, id);
+  }
+  const firesKey = (fires) => [...new Set((fires || []).map((x) => netOf.get(x[0])))].sort((a, b) => a - b).join('.');
+
+  // Without hazards only the movers keep time. Within 3 tiles of a mover's path (room to stand and
+  // wait for it) the phase stays in the key, so the wait moves can line up any phase there; further
+  // away it is left out, which drops ~20x duplicate states without losing a route.
+  const NEAR = 3;
+  const moverBoxes = world.movers.map((m) => [Math.min(m.ax, m.bx) / T - NEAR, Math.min(m.ay, m.by) / T - NEAR,
+    (Math.max(m.ax, m.bx) + m.w) / T + NEAR, Math.max(m.ay, m.by) / T + NEAR]);
+  const clockMatters = (s) => HZ || s.ride >= 0 || moverBoxes.some(([x0, y0, x1, y1]) => {
+    const cx = (s.x + CFG.BODY_W / 2) / T, fy = s.feet / T;
+    return cx >= x0 && cx <= x1 && fy >= y0 && fy <= y1;
+  });
   // with hazards the clock matters too (coarse phase bucket)
   const keyOf = (s) => `${Math.floor((s.x + CFG.BODY_W / 2) / T)},${Math.round(s.feet / T)},${s.pm},${s.tm}${s.ks ? 'K' : ''}` +
-    (CLOCKED ? `,${Math.floor(s.time) % 20}` : '') +
+    (CLOCKED && clockMatters(s) ? `,${Math.floor(s.time) % 20}` : '') +
     (PUZZLE ? `,${plateMask(s)}` : '') +
-    (world.flammables.size ? `,F${(s.fires || []).map((x) => x[0]).sort().join('.')}` : '');
+    (world.flammables.size ? `,F${firesKey(s.fires)}` : '');
   // only wax on plates changes what the level allows; other blobs are just footholds
   function plateMask(s) {
     let m = 0;
     for (const b of s.blobs || []) world.plates.forEach((pl, i) => { if (pl.tx === b[0] && pl.ty === b[1]) m |= 1 << i; });
     return m;
   }
+  // wax only comes back from unlit torches and untaken pumpkins (and soaking, when the bot may
+  // soak): a state that could not beat the best goal even taking every one of them is dropped
+  const SOAKS = PUZZLE || !!opts.soak;
+  const bits = (m, n) => { let c = 0; for (let i = 0; i < n; i++) if (m & (1 << i)) c++; return c; };
+  const hopeless = (s) => !SOAKS && goalHit &&
+    Math.min(CFG.WAX_MAX, s.wax + CFG.TORCH_REFILL * (nT - bits(s.tm, nT)) + CFG.PUMPKIN_REFILL * (nP - bits(s.pm, nP))) <= goalHit.wax + 0.5;
   const push = (s) => {
+    if (hopeless(s)) return;
     const k = keyOf(s);
     const b = best.get(k);
     if (b && b.wax >= s.wax - 0.5) return;
@@ -277,7 +322,7 @@ export function search(levelData, opts = {}) {
 
   while (queue.length && expanded < maxStates) {
     const s = heapPop(queue);           // best-first: highest wax
-    if (best.get(keyOf(s)) !== s) continue;
+    if (best.get(keyOf(s)) !== s || hopeless(s)) continue;
     expanded++;
 
     for (const [name, prog, cost] of progs) {
@@ -370,7 +415,8 @@ export function search(levelData, opts = {}) {
     if (goalHit && (opts.firstHit ?? (CLOCKED || PUZZLE))) break;
   }
   Events.muted = false;
-  return { goal: goalHit, expanded, sims, torchHits, world, states: best.size, best };
+  // budgetHit: the search stopped at maxStates with states still queued (a miss is then not a proof)
+  return { goal: goalHit, expanded, sims, torchHits, world, states: best.size, best, maxStates, budgetHit: expanded >= maxStates && queue.length > 0 };
 }
 
 export function pathOf(s) {

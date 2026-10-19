@@ -1,5 +1,6 @@
 // Headless QA for WICK. Run: node tests/playtest.js  (or npm test)
-// Flags: --quick  skips the slow torch-segment searches.
+// Flags: --quick      skips the slow torch-segment searches.
+//        --level N    checks only level N (1-based; repeat it or give a list: --level 4,9,12).
 import { CFG } from '../src/config.js';
 import { createWorld, normaliseTiles } from '../src/level.js';
 import { Player } from '../src/player.js';
@@ -11,6 +12,13 @@ import { Input, input } from '../src/input.js';
 
 const QUICK = process.argv.includes('--quick');
 import LEVELS from '../src/levels/index.js';
+const ONLY = process.argv.flatMap((a, i) => {
+  const v = a.startsWith('--level=') ? a.slice(8) : a === '--level' ? process.argv[i + 1] : null;
+  return v ? v.split(',').map(Number) : [];
+});
+for (const n of ONLY) if (!(n >= 1 && n <= LEVELS.length)) { console.log(`--level ${n}: no such level (1-${LEVELS.length})`); process.exit(1); }
+const picked = (i) => !ONLY.length || ONLY.includes(i + 1);
+const T0 = Date.now();
 
 let failures = 0, warnings = 0;
 const ok = (msg) => console.log(`  ok    ${msg}`);
@@ -22,6 +30,7 @@ const section = (t) => console.log(`\n== ${t}`);
 // ------------------------------------------------------------ parse
 section('Level parsing');
 LEVELS.forEach((L, i) => {
+  if (!picked(i)) return;
   try {
     const { errors } = normaliseTiles(L.tiles);
     const w = createWorld(L);
@@ -35,14 +44,34 @@ LEVELS.forEach((L, i) => {
 
 // ------------------------------------------------------------ reachability
 section('Reachability bot (real Player physics; wind/water timing disabled)');
+// Tall levels are searched torch by torch, each segment going on from where the last one
+// lit its torch (a chained route is still a real route); the rest in one search.
+function reach(L) {
+  if (L.tiles.length <= 40) { const r = search(L, {}); return { ...r, segments: r.goal ? [r.goal] : [] }; }
+  const segments = [];
+  let cur = null, r = null, states = 0;
+  for (let k = 0; k < 16 && !(cur && cur.complete); k++) {
+    r = search(L, { target: 'nextTorch', startState: cur });
+    states += r.states;
+    if (!r.goal) break;
+    segments.push(cur = r.goal);
+  }
+  return { ...r, goal: cur && cur.complete ? cur : null, segments, states };
+}
 const routes = [];
 for (let i = 0; i < LEVELS.length; i++) {
+  if (!picked(i)) { routes.push(null); continue; }
   const t0 = Date.now();
-  const r = search(LEVELS[i], {});
+  const r = reach(LEVELS[i]);
   const ms = Date.now() - t0;
-  if (!r.goal) { fail(`level ${i + 1}: goal NOT reachable from spawn at full wax (${r.states} states, ${ms}ms)`); routes.push(null); continue; }
-  const minArrival = Math.min(r.goal.wax, ...r.goal.arrivals);
-  check(true, `level ${i + 1}: goal reached, optimal ${r.goal.time.toFixed(1)}s, ${r.goal.wax.toFixed(0)} wax left (${ms}ms)`);
+  if (!r.goal) {
+    const why = r.budgetHit ? `search budget of ${r.maxStates} expanded states ran out; raise maxStates or look for a state explosion`
+      : 'every reachable state was tried';
+    fail(`level ${i + 1}: goal NOT reachable from spawn at full wax (${why}; ${r.segments.length} torch segments, ${r.states} states, ${ms}ms)`);
+    routes.push(null); continue;
+  }
+  const minArrival = Math.min(r.goal.wax, ...r.segments.flatMap((g) => g.arrivals));
+  check(true, `level ${i + 1}: goal reached, best route ${r.goal.time.toFixed(1)}s, ${r.goal.wax.toFixed(0)} wax left (${ms}ms)`);
   if (minArrival < 15) warn(`level ${i + 1}: tightest point leaves ${minArrival.toFixed(0)} wax (target >= 15)`);
   else ok(`level ${i + 1}: >= 15 wax spare at every torch and the goal (min ${minArrival.toFixed(0)})`);
   routes.push(r);
@@ -51,19 +80,21 @@ for (let i = 0; i < LEVELS.length; i++) {
 section('Wax management required (no-drip bot must fail)');
 {
   for (const name of ['Market Row', 'Bell Tower', 'Ember Fair']) {
-    const L = LEVELS.find((l) => l.name === name);
-    const r = search(L, { drip: false });
-    check(!r.goal, `${name} cannot be finished without dripping wax`);
+    const i = LEVELS.findIndex((l) => l.name === name);
+    if (!picked(i)) continue;
+    const r = search(LEVELS[i], { drip: false });
+    if (r.budgetHit) fail(`${name}: no-drip search ran out of budget (${r.maxStates} states) before proving anything`);
+    else check(!r.goal, `${name} cannot be finished without dripping wax`);
   }
 }
 
 if (!QUICK) {
-  section('Torch to torch at the guaranteed respawn wax (per-torch floor)');
+  section('Torch to torch at the guaranteed respawn wax (per-torch floor; hazards on, as the floors are set)');
   for (let i = 0; i < LEVELS.length; i++) {
     const r = routes[i];
     if (!r) continue;
     // order in which the optimal route lit torches, and pumpkins used before each
-    const path = pathOf(r.goal);
+    const path = r.segments.flatMap((g) => pathOf(g));
     const order = [];
     let prev = path[0];
     for (const s of path) {
@@ -81,7 +112,7 @@ if (!QUICK) {
       const floor = torch.floor;
       const res = search(LEVELS[i], {
         start: { x: torch.x - CFG.BODY_W / 2, feet: torch.y, wax: floor },
-        litTorches: lit, takenPumpkins: taken, target: 'nextTorch', firstHit: true,
+        litTorches: lit, takenPumpkins: taken, target: 'nextTorch', firstHit: true, hazards: true,
       });
       const to = k + 1 < order.length ? `torch ${k + 2}` : 'goal';
       if (res.goal) ok(`level ${i + 1}: torch ${k + 1} -> ${to} at ${floor} wax (${res.goal.wax.toFixed(0)} left)`);
@@ -94,6 +125,7 @@ if (!QUICK) {
 section('60s random-input soak per level (all hazards on)');
 let updTotal = 0, updFrames = 0;
 LEVELS.forEach((L, i) => {
+  if (!picked(i)) return;
   Events.muted = true;
   const world = createWorld(L);
   const p = new Player();
@@ -352,5 +384,5 @@ section('Input layer');
   check(input.moveX === -1 && input.left, 'unified input: touch left gives moveX -1');
 }
 
-console.log(`\n${failures ? 'FAILED' : 'PASSED'}: ${failures} failure(s), ${warnings} warning(s)`);
+console.log(`\n${failures ? 'FAILED' : 'PASSED'}: ${failures} failure(s), ${warnings} warning(s) in ${((Date.now() - T0) / 1000).toFixed(0)}s`);
 process.exit(failures ? 1 : 0);
