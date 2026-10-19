@@ -146,8 +146,8 @@ export function drawWick(ctx, p, time, opts = {}) {
   drip(w / 2 - 4, Math.min(h - 10, 6 + h * 0.25));
   drip(-w / 2 + 6, Math.min(h - 12, 3 + h * 0.12));
   ctx.restore();
-  // low wax: a warm rim outside the outline, so the danger state is the most readable one
-  const rim = p.alive ? clamp((0.25 - frac) / 0.25, 0, 1) : 0;
+  // low wax (under 35%): a warm rim outside the outline, so the danger state is the most readable one
+  const rim = p.alive ? clamp((0.35 - frac) / 0.3, 0, 1) : 0;
   lowRim.rim = 0;
   if (rim > 0) {
     bodyPath();
@@ -368,8 +368,17 @@ export function drawWickRim(ctx, p, time) {
   ctx.save();
   ctx.setTransform(lowRim.m);
   ctx.lineJoin = 'round';
-  ctx.strokeStyle = `rgba(255,${180 + 30 * Math.sin(time * 6) | 0},110,${(0.6 + 0.35 * rim) * beat})`;
-  ctx.lineWidth = 2.4 + 2.6 * rim; ctx.stroke(lowRim.path);
+  // a warm pool of light round Wick, a soft halo, a bright rim, then the crisp outline
+  ctx.globalCompositeOperation = 'lighter';
+  const r = 46 + 10 * rim;
+  const pool = ctx.createRadialGradient(0, -14, 0, 0, -14, r);
+  pool.addColorStop(0, `rgba(255,180,100,${(0.16 + 0.12 * rim) * beat})`); pool.addColorStop(1, 'rgba(255,150,70,0)');
+  ctx.fillStyle = pool; ctx.fillRect(-r, -14 - r, r * 2, r * 2);
+  ctx.strokeStyle = `rgba(255,170,80,${(0.22 + 0.2 * rim) * beat})`;
+  ctx.lineWidth = 8 + 6 * rim; ctx.stroke(lowRim.path);
+  ctx.globalCompositeOperation = 'source-over';
+  ctx.strokeStyle = `rgba(255,${200 + 30 * Math.sin(time * 6) | 0},130,${(0.75 + 0.25 * rim) * beat})`;
+  ctx.lineWidth = 3 + 2.8 * rim; ctx.stroke(lowRim.path);
   ctx.strokeStyle = OUTLINE; ctx.lineWidth = 1.6; ctx.stroke(lowRim.path);
   ctx.restore();
 }

@@ -94,12 +94,27 @@ export const THEMES = {
     sky: ['#140826', '#3e1446', '#9a2c46', '#e0623a'], glow: '255,150,90', haze: '#6a2440',
     stone: 'castle', backwall: 'castle', stars: true, clouds: '#7a2a4a',
   },
+  // scene variants: a level whose scene needs its own palette, not its theme's
+  locks: {                 // Gale Locks: a cool teal-grey evening on the canal
+    leaves: true,
+    sky: ['#0a161e', '#1a3240', '#3c5c66', '#86a09a'], glow: '200,225,210', haze: '#2c4850',
+    stone: 'lock', fg: 'grass', clouds: '#2c4852', streaks: true, mist: 'rgba(160,205,210,',
+    farTint: '#3e6a72',
+  },
+  scorch: {                // Firebreak: ash and smoke, so the fire hazards are the brightest thing
+    leaves: true,
+    sky: ['#140a12', '#32161e', '#5c2c26', '#8c4e34'], glow: '220,125,70', haze: '#3a1e1e',
+    stone: 'warm', fg: 'pumpkins', clouds: '#36201f',
+  },
 };
 
 for (const [k, v] of Object.entries(THEMES)) v.name = k;
 
+const SCENE_THEMES = { locks: 'locks', scorch: 'scorch' };
 export function themeOf(world) {
   const d = world.data || {};
+  const sc = SCENE_THEMES[d.scene];
+  if (sc) return THEMES[sc];
   return THEMES[d.theme] || (d.finale ? THEMES.castle : THEMES.dusk);
 }
 
@@ -116,6 +131,8 @@ const DECO = {
   cold: ['snow', 'snow', 'icerock', 'rocks'],
   castle: ['rubble', 'tuft', 'rubble', 'mushrooms'],
   works: ['rubble', 'straw', 'rocks', 'rubble'],
+  locks: ['tuft', 'rocks', 'tuft', 'mushrooms'],
+  scorch: ['rubble', 'rocks', 'straw', 'rubble'],
 };
 
 const STONES = {
@@ -124,6 +141,7 @@ const STONES = {
   wet: { mortar: '#221e3a', cols: ['#5e4e70', '#524466', '#6a5a7e', '#483c5c'], top: 'moss' },
   slate: { mortar: '#1c2140', cols: ['#5a6484', '#4e5878', '#66708f', '#46506c'], top: 'snow' },
   castle: { mortar: '#2c1a2e', cols: ['#7c6272', '#6e5464', '#886c7c', '#604858'], top: 'moss' },
+  lock: { mortar: '#18242c', cols: ['#5a6c70', '#4e6064', '#667a7c', '#46585c'], top: 'moss' },
 };
 
 // ------------------------------------------------------------ tile sprites (2x)
@@ -242,17 +260,26 @@ function buildSprites(pal, wallKind, themeName) {
         }
         return;
       }
-      for (let i = 0; i < 4; i++) {
-        const x = 2 + r() * 28, len = 6 + r() * 16;
-        g.strokeStyle = r() < 0.5 ? '#2f6a5a' : '#5a6a2a'; g.lineWidth = 1.4;
-        g.beginPath(); g.moveTo(x, 0); g.quadraticCurveTo(x + (r() - 0.5) * 6, len * 0.6, x + (r() - 0.5) * 3, len); g.stroke();
-        g.fillStyle = r() < 0.5 ? '#3f8a76' : '#c9a03a';
-        g.beginPath(); g.ellipse(x + 1, len * 0.55, 2, 1.2, 0.6, 0, 6.283); g.fill();
-        // a pointed leaf at the tip, hung off-axis (a round bead read as a music note)
-        const lx = x + (r() - 0.5) * 3, s = r() < 0.5 ? -1 : 1;
-        g.beginPath(); g.moveTo(lx, len - 1);
-        g.quadraticCurveTo(lx + s * 3.2, len, lx + s * 2.4, len + 3.4);
-        g.quadraticCurveTo(lx + s * 0.4, len + 2.2, lx, len - 1); g.fill();
+      // trailing vines: a thin stem with small leaves strung along it and a bare
+      // tendril tip. No end blob and no single head, so a strand never reads as a ♪
+      const n = 2 + (r() < 0.45 ? 1 : 0);
+      for (let i = 0; i < n; i++) {
+        const x = 3 + (i + 0.15 + r() * 0.7) * (26 / n), len = 11 + r() * 18;
+        const bend = (r() - 0.5) * 8, ex = x + (r() - 0.5) * 4;
+        const at = (t) => [(1 - t) * (1 - t) * x + 2 * (1 - t) * t * (x + bend) + t * t * ex, 2 * (1 - t) * t * len * 0.55 + t * t * len];
+        g.strokeStyle = r() < 0.5 ? '#2f6a5a' : '#4a6a34'; g.lineWidth = 1.1; g.lineCap = 'round';
+        g.beginPath(); g.moveTo(x, 0); g.quadraticCurveTo(x + bend, len * 0.55, ex, len); g.stroke();
+        const leaves = 2 + ((r() * 3) | 0);
+        let s = r() < 0.5 ? -1 : 1;
+        for (let k = 0; k < leaves; k++) {
+          const [lx, ly] = at(0.14 + (k + r() * 0.5) * (0.68 / leaves));
+          const L = 3.4 + r() * 1.4, Wd = 1.5;
+          g.fillStyle = r() < 0.18 ? '#a8963a' : r() < 0.5 ? '#3f8a76' : '#4f9a6a';
+          g.save(); g.translate(lx, ly); g.rotate(s > 0 ? 0.55 : Math.PI - 0.55);
+          g.beginPath(); g.moveTo(0, 0); g.quadraticCurveTo(L * 0.5, -Wd, L, 0); g.quadraticCurveTo(L * 0.5, Wd, 0, 0); g.fill();
+          g.restore();
+          s = -s;
+        }
       }
     }));
   }
@@ -602,10 +629,29 @@ export function drawBackground(ctx, cam, world, time) {
       ctx.fillRect(0, y + 40, W, H - y);
     }
   });
+  drawFarTint(ctx, th, lift);
   drawThemeBackdrop(ctx, cam, world, time, th, lift);
   drawTrees(ctx, cam, world);
   if (th.bunting && !world.data.finale && world.data.scene !== 'scorch') drawBunting(ctx, cam, time, lift);
-  if (th.rain) drawRainStreaks(ctx, time, 0.18, 70, 1);
+  if (th.rain) drawRainStreaks(ctx, time, 0.18, 70, 1, world, cam);
+}
+
+// Far layers (town strips, castle) pushed back: the canal's sink darker and bluer so
+// nearer stone reads in front; Gale Locks recolours them into its own teal evening.
+function drawFarTint(ctx, th, lift) {
+  const W = CFG.VIEW_W, H = CFG.VIEW_H;
+  if (th.name === 'canal') {
+    const y0 = H * 0.3 + lift * 0.1;
+    const g = ctx.createLinearGradient(0, y0, 0, H);
+    g.addColorStop(0, 'rgba(10,16,40,0)'); g.addColorStop(0.4, 'rgba(10,16,40,0.32)'); g.addColorStop(1, 'rgba(8,12,32,0.42)');
+    ctx.fillStyle = g; ctx.fillRect(0, y0, W, H - y0);
+  } else if (th.farTint) {
+    ctx.save();
+    if (Post.quality >= 1) { ctx.globalCompositeOperation = 'color'; ctx.globalAlpha = 0.7; ctx.fillStyle = th.farTint; }
+    else ctx.fillStyle = 'rgba(20,52,60,0.3)';
+    ctx.fillRect(0, 0, W, H);
+    ctx.restore();
+  }
 }
 
 function drawClouds(ctx, cam, th, time, lift) {
@@ -636,8 +682,9 @@ function drawRainStreaks(ctx, time, alpha, n, speed, world, cam) {
     const x = ((i * 73.7 + time * 60 * speed) % (W + 40)) - 20;
     const y = ((i * 131.3 + time * 620 * speed) % (H + 60)) - 30;
     if (top) {
-      const tx = Math.floor((x + cam.x) / T);
-      if (tx >= 0 && tx < world.w && y + 16 + cam.y > top[tx] * T) continue;
+      // both ends of the slanted streak must be in open sky
+      const ta = Math.floor((x + cam.x) / T), tb = Math.floor((x - 4 + cam.x) / T), yb = y + 16 + cam.y;
+      if ((ta >= 0 && ta < world.w && yb > top[ta] * T) || (tb >= 0 && tb < world.w && yb > top[tb] * T)) continue;
     }
     ctx.moveTo(x, y); ctx.lineTo(x - 4, y + 16);
   }
@@ -1069,14 +1116,15 @@ export function drawProps(ctx, cam, world, time) {
 // ------------------------------------------------------------ entities
 export function drawEntities(ctx, cam, world, time) {
   const inView = (x, y, m = 80) => x > cam.x - m && x < cam.x + cam.w + m && y > cam.y - m && y < cam.y + cam.h + m * 2;
+  drawFuseSupports(ctx, cam, world);
+  drawWebs(ctx, cam, world);
   for (const e of world.entities) {
     switch (e.type) {
       case 'torch': if (inView(e.x, e.y)) drawTorch(ctx, e, time); break;
       case 'pumpkin': if (inView(e.x, e.y)) drawPumpkin(ctx, e, time); break;
       case 'keepsake': if (inView(e.x, e.y)) drawKeepsake(ctx, e, time); break;
-      case 'goal': if (inView(e.x, e.y, 200)) drawGoal(ctx, e, time); break;
+      case 'goal': if (inView(e.x, e.y, 200)) (world.data.finale ? drawGreatTorch : drawGoal)(ctx, e, time); break;
       case 'drip': if (inView(e.x, e.y, 300)) drawDrips(ctx, e); break;
-      case 'cobweb': if (inView(e.x, e.y)) drawCobweb(ctx, e, time); break;
       case 'fuse': if (inView(e.x, e.y)) drawFuse(ctx, e, world, time); break;
       case 'gate': if (inView(e.x, e.y) && e.state === 'burning') drawGateFire(ctx, e, time); break;
     }
@@ -1235,6 +1283,74 @@ function drawGoal(ctx, e, time) {
   }
 }
 
+// The finale goal: the castle's great torch. A stepped, gilded plinth, a fluted
+// column, a wide bowl and two swallowtail banners; five flames once lit.
+function drawGreatTorch(ctx, e, time) {
+  const x = e.x, y = e.y;
+  ctx.save();
+  ctx.strokeStyle = OUT; ctx.lineWidth = 2.5; ctx.lineJoin = 'round';
+  // stepped plinth with gold trim
+  for (const [w, top, col] of [[100, 12, '#5a3e50'], [82, 24, '#6a4a5c'], [64, 36, '#76566a']]) {
+    ctx.fillStyle = col; ctx.fillRect(x - w / 2, y - top, w, 12); ctx.strokeRect(x - w / 2, y - top, w, 12);
+    ctx.fillStyle = '#d9a640'; ctx.fillRect(x - w / 2 + 2, y - top + 1.5, w - 4, 2);
+  }
+  ctx.fillStyle = '#3a2a3e';
+  for (const dx of [-24, 0, 24]) { ctx.beginPath(); ctx.arc(x + dx, y - 30, 2.4, 0, 6.283); ctx.fill(); }
+  // fluted column with gold bands
+  ctx.fillStyle = '#7e5a6e'; ctx.fillRect(x - 15, y - 104, 30, 68); ctx.strokeRect(x - 15, y - 104, 30, 68);
+  ctx.strokeStyle = 'rgba(30,12,36,0.45)'; ctx.lineWidth = 1.5;
+  ctx.beginPath(); for (const dx of [-8, 0, 8]) { ctx.moveTo(x + dx, y - 98); ctx.lineTo(x + dx, y - 42); } ctx.stroke();
+  ctx.strokeStyle = OUT; ctx.lineWidth = 2;
+  ctx.fillStyle = '#e8b03a';
+  for (const by of [y - 46, y - 98]) { ctx.fillRect(x - 17, by, 34, 5); ctx.strokeRect(x - 17, by, 34, 5); }
+  // arms carrying the banners
+  ctx.fillStyle = '#3a2a3e'; ctx.fillRect(x - 58, y - 112, 116, 5); ctx.strokeRect(x - 58, y - 112, 116, 5);
+  for (const s of [-1, 1]) {
+    const bx = x + s * 46, sw = Math.sin(time * 1.5 + s) * 2.5;
+    ctx.fillStyle = '#a8242c'; ctx.strokeStyle = OUT; ctx.lineWidth = 2;
+    ctx.beginPath(); ctx.moveTo(bx - 10, y - 107); ctx.lineTo(bx + 10, y - 107); ctx.lineTo(bx + 10 + sw, y - 60);
+    ctx.lineTo(bx + sw, y - 70); ctx.lineTo(bx - 10 + sw, y - 60); ctx.closePath(); ctx.fill(); ctx.stroke();
+    ctx.fillStyle = '#e8b03a'; ctx.fillRect(bx - 10, y - 107, 20, 3);
+    // a gold flame sigil on each banner
+    ctx.beginPath(); ctx.moveTo(bx + sw * 0.4, y - 98); ctx.quadraticCurveTo(bx + 6 + sw * 0.5, y - 86, bx + sw * 0.5, y - 80);
+    ctx.quadraticCurveTo(bx - 6 + sw * 0.5, y - 86, bx + sw * 0.4, y - 98); ctx.fill();
+  }
+  // the great bowl
+  ctx.fillStyle = '#3a2a3e'; ctx.strokeStyle = OUT; ctx.lineWidth = 2.5;
+  ctx.beginPath(); ctx.moveTo(x - 46, y - 134); ctx.lineTo(x + 46, y - 134);
+  ctx.quadraticCurveTo(x + 40, y - 108, x + 16, y - 104); ctx.lineTo(x - 16, y - 104); ctx.quadraticCurveTo(x - 40, y - 108, x - 46, y - 134);
+  ctx.closePath(); ctx.fill(); ctx.stroke();
+  ctx.fillStyle = '#e8b03a'; ctx.fillRect(x - 49, y - 137, 98, 5); ctx.strokeRect(x - 49, y - 137, 98, 5);
+  ctx.fillStyle = '#d9a640';
+  for (let k = -3; k <= 3; k++) { ctx.beginPath(); ctx.arc(x + k * 11, y - 122 + Math.abs(k) * 1.5, 2, 0, 6.283); ctx.fill(); }
+  ctx.restore();
+  if (e.lit) {
+    const g = Math.min(1, e.litTime * 2);
+    for (const [dx, s, ph] of [[-30, 13, 0], [30, 13, 1], [-16, 19, 2], [16, 19, 3], [0, 28, 4]]) {
+      drawFlame(ctx, x + dx, y - 135, s * g, Math.sin(time * (1.7 + ph * 0.2)) * 0.18, time + ph);
+    }
+  } else {
+    for (const dx of [-14, 0, 14]) {
+      ctx.fillStyle = `rgba(255,90,40,${0.45 + 0.35 * Math.sin(time * 3 + dx)})`;
+      ctx.beginPath(); ctx.arc(x + dx, y - 137, 3.5, 0, 6.283); ctx.fill();
+    }
+  }
+}
+
+// after the darkness: the great torch's halo, a faint ember glow until it is lit
+function drawGreatTorchGlow(ctx, cam, world, time) {
+  const e = world.goal;
+  if (!e || !world.data.finale || e.x < cam.x - 300 || e.x > cam.x + cam.w + 300) return;
+  const cx = e.x, cy = e.y - 140;
+  const k = e.lit ? Math.min(1, e.litTime * 1.5) : 0;
+  const r = 70 + 190 * k, fl = 1 + 0.05 * Math.sin(time * 11);
+  const g = ctx.createRadialGradient(cx, cy, 0, cx, cy, r * fl);
+  g.addColorStop(0, `rgba(255,200,110,${0.16 + 0.34 * k})`);
+  g.addColorStop(0.35, `rgba(255,140,60,${0.06 + 0.16 * k})`);
+  g.addColorStop(1, 'rgba(255,110,50,0)');
+  ctx.fillStyle = g; ctx.fillRect(cx - r * fl, cy - r * fl, r * 2 * fl, r * 2 * fl);
+}
+
 // Wax blob: poured wax on a melted puddle foot, with drips running over the lip
 // and a glossy highlight. Neighbouring blobs fuse into one mass (no seams, no
 // outline between them), so a row reads as poured wax rather than tombstones.
@@ -1357,29 +1473,177 @@ function drawDrips(ctx, e) {
   }
 }
 
-function drawCobweb(ctx, e, time) {
-  if (e.state === 'gone') return;
-  const cx = e.x + T / 2, cy = e.y + T / 2;
-  const burning = e.state === 'burning';
-  const t = burning ? 1 - e.t / e.burn : 1;
-  ctx.strokeStyle = burning ? `rgba(255,${140 + Math.random() * 80 | 0},60,${t})` : 'rgba(225,215,240,0.75)';
-  ctx.lineWidth = 1.2;
-  ctx.beginPath();
-  for (let i = 0; i < 8; i++) {
-    const a = (i / 8) * Math.PI * 2 + (e.tx * 0.7);
-    ctx.moveTo(cx, cy); ctx.lineTo(cx + Math.cos(a) * 22, cy + Math.sin(a) * 22);
+// Cobwebs: each contiguous patch of cobweb cells is drawn as one web, spokes from
+// an off-centre hub out to the patch's corners and edges, with sagging rings. The
+// web is clipped per cell, so cells still burn (and leave holes) one by one.
+const webCache = new WeakMap();
+function webRegions(world) {
+  let regs = webCache.get(world);
+  if (regs) return regs;
+  regs = [];
+  const webs = world.entities.filter((e) => e.type === 'cobweb');
+  const at = new Map(webs.map((e) => [e.ty * world.w + e.tx, e]));
+  const seen = new Set();
+  for (const e0 of webs) {
+    if (seen.has(e0)) continue;
+    const cells = [], st = [e0];
+    seen.add(e0);
+    while (st.length) {
+      const e = st.pop();
+      cells.push(e);
+      for (const [dx, dy] of [[1, 0], [-1, 0], [0, 1], [0, -1]]) {
+        const n = at.get((e.ty + dy) * world.w + e.tx + dx);
+        if (n && !seen.has(n)) { seen.add(n); st.push(n); }
+      }
+    }
+    let x0 = Infinity, y0 = Infinity, x1 = -Infinity, y1 = -Infinity;
+    for (const e of cells) { x0 = Math.min(x0, e.x); y0 = Math.min(y0, e.y); x1 = Math.max(x1, e.x + T); y1 = Math.max(y1, e.y + T); }
+    regs.push({ cells, x0, y0, x1, y1, path: webPath(x0, y0, x1, y1, rng(e0.tx * 131 + e0.ty * 977)) });
   }
-  for (const r of [6, 11, 16]) {
-    for (let i = 0; i <= 8; i++) {
-      const a = (i / 8) * Math.PI * 2 + (e.tx * 0.7);
-      const rr = r * (0.9 + 0.1 * Math.sin(i * 3));
-      if (i === 0) ctx.moveTo(cx + Math.cos(a) * rr, cy + Math.sin(a) * rr);
-      else ctx.lineTo(cx + Math.cos(a) * rr, cy + Math.sin(a) * rr);
+  webCache.set(world, regs);
+  return regs;
+}
+
+function webPath(x0, y0, x1, y1, r) {
+  const w = x1 - x0, h = y1 - y0;
+  const hx = x0 + w * (0.38 + 0.24 * r()), hy = y0 + h * (0.3 + 0.25 * r());
+  // a ray from the hub to the patch boundary
+  const hit = (a) => {
+    const c = Math.cos(a), s = Math.sin(a);
+    const tx = c > 0 ? (x1 - 1 - hx) / c : c < 0 ? (x0 + 1 - hx) / c : Infinity;
+    const ty = s > 0 ? (y1 - 1 - hy) / s : s < 0 ? (y0 + 1 - hy) / s : Infinity;
+    const t = Math.min(tx, ty);
+    return [hx + c * t, hy + s * t];
+  };
+  const n = clamp(Math.round((w + h) * 2 / 24), 8, 17);
+  const spokes = [];
+  const a0 = r() * 6.283;
+  for (let i = 0; i < n; i++) spokes.push(a0 + (i + (r() - 0.5) * 0.5) * 6.283 / n);
+  // corner anchors: the threads that hold the whole web up
+  for (const [cx, cy] of [[x0 + 1, y0 + 1], [x1 - 1, y0 + 1], [x1 - 1, y1 - 1], [x0 + 1, y1 - 1]]) spokes.push(Math.atan2(cy - hy, cx - hx));
+  const ends = spokes.map((a) => ((a % 6.283) + 6.283) % 6.283).sort((a, b) => a - b).map(hit);
+  const p = new Path2D();
+  for (const [ex, ey] of ends) { p.moveTo(hx, hy); p.lineTo(ex, ey); }
+  const maxR = Math.max(...ends.map(([ex, ey]) => Math.hypot(ex - hx, ey - hy)));
+  const rings = clamp(Math.round(maxR / 10), 3, 9);
+  for (let j = 1; j <= rings; j++) {
+    const f = 0.08 + 0.86 * (j / rings) ** 1.15;
+    const pts = ends.map(([ex, ey]) => { const k = f + (r() - 0.5) * 0.05; return [hx + (ex - hx) * k, hy + (ey - hy) * k]; });
+    for (let i = 0; i < pts.length; i++) {
+      if (r() < 0.07) continue;               // a few broken strands
+      const [ax, ay] = pts[i], [bx, by] = pts[(i + 1) % pts.length];
+      const sag = 0.16 + 0.1 * r();             // each strand droops toward the hub
+      const mx = (ax + bx) / 2, my = (ay + by) / 2;
+      p.moveTo(ax, ay);
+      p.quadraticCurveTo(mx + (hx - mx) * sag, my + (hy - my) * sag + 1.5, bx, by);
     }
   }
-  ctx.stroke();
-  ctx.fillStyle = burning ? `rgba(255,120,40,${0.3 * t})` : 'rgba(225,215,240,0.12)';
-  ctx.fillRect(e.x, e.y, T, T);
+  p.moveTo(hx + 2.5, hy); p.arc(hx, hy, 2.5, 0, 6.283);
+  return p;
+}
+
+function drawWebs(ctx, cam, world) {
+  for (const R of webRegions(world)) {
+    if (R.x1 < cam.x - 40 || R.x0 > cam.x + cam.w + 40 || R.y1 < cam.y - 40 || R.y0 > cam.y + cam.h + 40) continue;
+    const clip = new Path2D();
+    let any = false;
+    for (const e of R.cells) if (e.state === 'intact') { clip.rect(e.x, e.y, T, T); any = true; }
+    if (any) {
+      ctx.save(); ctx.clip(clip);
+      ctx.fillStyle = 'rgba(225,215,240,0.07)'; ctx.fillRect(R.x0, R.y0, R.x1 - R.x0, R.y1 - R.y0);
+      ctx.strokeStyle = 'rgba(225,215,240,0.72)'; ctx.lineWidth = 1.1;
+      ctx.stroke(R.path);
+      ctx.restore();
+    }
+    for (const e of R.cells) {
+      if (e.state !== 'burning') continue;
+      const t = 1 - e.t / e.burn;
+      ctx.save();
+      ctx.beginPath(); ctx.rect(e.x, e.y, T, T); ctx.clip();
+      ctx.fillStyle = `rgba(255,120,40,${0.3 * t})`; ctx.fillRect(e.x, e.y, T, T);
+      ctx.strokeStyle = `rgba(255,${140 + Math.random() * 80 | 0},60,${t})`; ctx.lineWidth = 1.4;
+      ctx.stroke(R.path);
+      ctx.restore();
+    }
+  }
+}
+
+// Fuse supports: a fuse with no wall to be nailed to is strung up on something.
+// Vertical runs climb a wooden pole (continued down to the ground), long spans in
+// the open rest on a stake from the ground or hang on a hook from a ceiling. Each
+// piece belongs to one fuse cell and burns away with it. Render-only, cached.
+const supportCache = new WeakMap();
+function fuseSupports(world) {
+  let out = supportCache.get(world);
+  if (out) return out;
+  out = [];
+  const solid = (tx, ty) => { const k = world.cell(tx, ty); return k === STONE || k === EMITTER || k === ONEWAY; };
+  const net = (tx, ty) => { const n = world.flammables.get(ty * world.w + tx); return n && (n.type === 'fuse' || n.type === 'gate'); };
+  const ground = (tx, ty, max) => {          // first standing surface below, through open cells only
+    for (let k = 0; k < max; k++, ty++) {
+      const c = world.cell(tx, ty);
+      if (c === 0) continue;
+      return solid(tx, ty) ? ty : -1;
+    }
+    return -1;
+  };
+  for (const e of world.entities) {
+    if (e.type !== 'fuse') continue;
+    const { tx, ty } = e;
+    if (solid(tx - 1, ty) || solid(tx + 1, ty) || solid(tx, ty - 1) || solid(tx, ty + 1)) continue;
+    const cx = e.x + T / 2, cy = e.y + T / 2;
+    const up = net(tx, ty - 1), down = net(tx, ty + 1);
+    if (up || down) {
+      let y1 = e.y + T, foot = false;
+      if (!down) { const g = ground(tx, ty + 1, 14); y1 = g >= 0 ? g * T : cy + 6; foot = g >= 0; }
+      out.push({ e, kind: 'pole', x: cx - 5, y0: up ? e.y : cy - 4, y1, cap: !up, foot });
+    } else if (((tx % 4) + 4) % 4 === 0) {
+      let hook = -1;
+      for (let k = 1; k <= 3; k++) { if (solid(tx, ty - k)) { hook = ty - k; break; } if (world.cell(tx, ty - k) !== 0) break; }
+      if (hook >= 0) { out.push({ e, kind: 'hook', x: cx, y0: (hook + 1) * T, y1: cy - 2 }); continue; }
+      const g = ground(tx, ty + 1, 13);
+      if (g >= 0) out.push({ e, kind: 'stake', x: cx, y0: cy - 1, y1: g * T, foot: true });
+    }
+  }
+  supportCache.set(world, out);
+  return out;
+}
+
+function drawFuseSupports(ctx, cam, world) {
+  const list = fuseSupports(world);
+  if (!list.length) return;
+  ctx.save();
+  ctx.lineCap = 'butt';
+  for (const s of list) {
+    if (s.e.state === 'gone') continue;
+    if (s.x < cam.x - 40 || s.x > cam.x + cam.w + 40 || s.y1 < cam.y - 20 || Math.min(s.y0, s.y1) > cam.y + cam.h + 20) continue;
+    const burnt = s.e.state === 'burning';
+    const wood = burnt ? '#6a2e1a' : '#5e3c28';
+    if (s.kind === 'hook') {
+      ctx.strokeStyle = '#2a1a22'; ctx.lineWidth = 1.4;
+      ctx.beginPath(); ctx.moveTo(s.x, s.y0); ctx.lineTo(s.x, s.y1 - 3); ctx.arc(s.x - 2.5, s.y1 - 3, 2.5, 0, Math.PI); ctx.stroke();
+      ctx.fillStyle = '#4a3a4e'; ctx.fillRect(s.x - 3, s.y0, 6, 2.5);
+      continue;
+    }
+    ctx.strokeStyle = OUT; ctx.lineWidth = 5.5;
+    ctx.beginPath(); ctx.moveTo(s.x, s.y0); ctx.lineTo(s.x, s.y1); ctx.stroke();
+    ctx.strokeStyle = wood; ctx.lineWidth = 3.2;
+    ctx.beginPath(); ctx.moveTo(s.x, s.y0); ctx.lineTo(s.x, s.y1); ctx.stroke();
+    ctx.strokeStyle = 'rgba(255,220,180,0.18)'; ctx.lineWidth = 1;
+    ctx.beginPath(); ctx.moveTo(s.x - 0.8, s.y0); ctx.lineTo(s.x - 0.8, s.y1); ctx.stroke();
+    if (s.kind === 'stake' || s.cap) {
+      // a crossarm the cord rests on, with an iron hook
+      const y = s.kind === 'stake' ? s.y0 + 2 : s.y0;
+      ctx.fillStyle = wood; ctx.strokeStyle = OUT; ctx.lineWidth = 1.2;
+      ctx.fillRect(s.x - 7, y - 1, 14, 3.5); ctx.strokeRect(s.x - 7, y - 1, 14, 3.5);
+    }
+    if (s.foot) {
+      // a little footing where the post meets the ground
+      ctx.fillStyle = '#4a3448'; ctx.strokeStyle = OUT; ctx.lineWidth = 1.2;
+      ctx.beginPath(); ctx.ellipse(s.x, s.y1 - 1, 5, 2.4, 0, Math.PI, 0); ctx.fill(); ctx.stroke();
+    }
+  }
+  ctx.restore();
 }
 
 // Fuse: a braided cord sagging between nail pegs, so a fuse line reads as rope
@@ -1831,20 +2095,30 @@ function drawJumpNotch(ctx, player) {
   const y = Math.round(player.feet - apex) + 0.5, cx = player.cx;
   const pulse = short ? 0.75 + 0.25 * Math.sin(now * 5) : 1;
   const a = notch.a * pulse;
-  const col = short ? '255,150,60' : '255,236,190';
+  // warm candle-light tint with a soft glow, so it reads as light, not a UI overlay;
+  // amber and pulsing once a two-tile step is out of reach
+  const col = short ? '255,140,50' : '255,214,150', glowCol = short ? '255,110,40' : '255,170,90';
+  const bracket = (x0, x1, s) => {
+    ctx.beginPath(); ctx.moveTo(x1, y + 4); ctx.lineTo(x1, y + 1.5);
+    ctx.quadraticCurveTo(x1, y, x1 - s * 1.5, y); ctx.lineTo(x0, y);
+  };
   ctx.save();
-  ctx.lineCap = 'round';
+  ctx.lineCap = 'round'; ctx.lineJoin = 'round';
   for (const s of [-1, 1]) {
-    const x0 = cx + s * 15, x1 = cx + s * 27;
-    // dark under-stroke so it reads on bright walls too
-    ctx.strokeStyle = `rgba(20,8,30,${0.55 * a})`; ctx.lineWidth = 4;
-    ctx.beginPath(); ctx.moveTo(x1, y + 3); ctx.lineTo(x1, y); ctx.lineTo(x0, y); ctx.stroke();
-    ctx.strokeStyle = `rgba(${col},${0.95 * a})`; ctx.lineWidth = 2;
-    ctx.beginPath(); ctx.moveTo(x1, y + 3); ctx.lineTo(x1, y); ctx.lineTo(x0, y); ctx.stroke();
+    const x0 = cx + s * 15, x1 = cx + s * 26;
+    // a gentle shadow for bright walls, then a wide faint glow and the bright line
+    ctx.strokeStyle = `rgba(30,12,30,${0.28 * a})`; ctx.lineWidth = 3.6;
+    bracket(x0, x1, s); ctx.stroke();
+    ctx.globalCompositeOperation = 'lighter';
+    ctx.strokeStyle = `rgba(${glowCol},${(short ? 0.3 : 0.2) * a})`; ctx.lineWidth = 7;
+    bracket(x0, x1, s); ctx.stroke();
+    ctx.globalCompositeOperation = 'source-over';
+    ctx.strokeStyle = `rgba(${col},${0.85 * a})`; ctx.lineWidth = 1.8;
+    bracket(x0, x1, s); ctx.stroke();
   }
   // a faint dotted guide between the brackets, above the flame
-  ctx.fillStyle = `rgba(${col},${0.5 * a})`;
-  for (let x = cx - 9; x <= cx + 9; x += 6) ctx.fillRect(x - 1, y - 0.5, 2, 1);
+  ctx.fillStyle = `rgba(${col},${0.42 * a})`;
+  for (let x = cx - 9; x <= cx + 9; x += 6) { ctx.beginPath(); ctx.arc(x, y, 0.9, 0, 6.283); ctx.fill(); }
   ctx.restore();
 }
 
@@ -1854,6 +2128,7 @@ export function drawLightDetail(ctx, cam, world, lights, time) {
   ctx.save();
   ctx.globalCompositeOperation = 'lighter';
   drawKeepsakeGlows(ctx, cam, world, time);
+  drawGreatTorchGlow(ctx, cam, world, time);
   ctx.restore();
   const lit = lights.filter((l) => !l.dim && l.x > cam.x - l.r && l.x < cam.x + cam.w + l.r && l.y > cam.y - l.r && l.y < cam.y + cam.h + l.r);
   if (!lit.length) return;

@@ -243,15 +243,17 @@ function drawCanalBridges(ctx, cam, time, lift) {
   const off = cam.x * f;
   for (let i = Math.floor(off / span) - 1; i < Math.floor(off / span) + 3; i++) {
     const x = i * span - off + 60, w = 300;
-    ctx.fillStyle = '#34466e';
+    // far arches stay darker and bluer than the near stone, so depth reads right
+    ctx.fillStyle = '#1c2748';
     ctx.beginPath();
     ctx.moveTo(x, base - 90); ctx.lineTo(x + w, base - 90); ctx.lineTo(x + w, base);
     ctx.arc(x + w / 2, base, w * 0.36, 0, Math.PI, true);
     ctx.lineTo(x, base); ctx.closePath(); ctx.fill();
     ctx.fillRect(x - 6, base - 100, w + 12, 12);
-    for (let k = 0; k < 6; k++) { ctx.fillRect(x + 10 + k * 56, base - 116, 6, 18); glow(x + 13 + k * 56, base - 120, 8, '255,190,110', 0.5); }
+    for (let k = 0; k < 6; k++) { ctx.fillRect(x + 10 + k * 56, base - 116, 6, 18); glow(x + 13 + k * 56, base - 120, 7, '255,190,110', 0.38); }
+    ctx.fillStyle = 'rgba(120,150,200,0.07)'; ctx.fillRect(x - 6, base - 100, w + 12, 2);
     // reflection of the arch in the water
-    ctx.strokeStyle = 'rgba(160,200,240,0.18)'; ctx.lineWidth = 2;
+    ctx.strokeStyle = 'rgba(160,200,240,0.12)'; ctx.lineWidth = 2;
     for (let k = 0; k < 4; k++) {
       const ry = base + 8 + k * 7;
       ctx.beginPath(); ctx.moveTo(x + w * 0.2 + Math.sin(time * 2 + k) * 6, ry); ctx.lineTo(x + w * 0.8 + Math.sin(time * 2.4 + k) * 6, ry); ctx.stroke();
@@ -366,12 +368,12 @@ function drawScorch(ctx, cam, world, time, lift) {
   const fl = 0.8 + 0.2 * Math.sin(time * 3.1) * Math.sin(time * 1.3);
   const g = ctx.createLinearGradient(0, hy - 80, 0, hy + 30);
   g.addColorStop(0, 'rgba(255,110,40,0)');
-  g.addColorStop(0.7, `rgba(255,110,40,${0.32 * fl})`);
-  g.addColorStop(1, 'rgba(255,160,70,0.45)');
+  g.addColorStop(0.7, `rgba(240,100,40,${0.2 * fl})`);
+  g.addColorStop(1, 'rgba(240,140,70,0.28)');
   ctx.fillStyle = g; ctx.fillRect(0, hy - 80, W, 110);
   // the fire line: clumps of overlapping tongues of uneven size and spacing, each a
   // soft red outer flame round an orange body and a yellow core (never a row of teeth)
-  const layers = [['rgba(220,70,40,0.32)', 1.5, 1.12], ['rgba(255,140,50,0.55)', 1, 1], ['rgba(255,220,120,0.7)', 0.45, 0.6]];
+  const layers = [['rgba(200,64,40,0.24)', 1.5, 1.12], ['rgba(240,130,50,0.4)', 1, 1], ['rgba(255,210,120,0.5)', 0.45, 0.6]];
   for (const [col, wk, hk] of layers) {
     ctx.fillStyle = col;
     ctx.beginPath();
@@ -390,7 +392,7 @@ function drawScorch(ctx, cam, world, time, lift) {
   }
   for (let k = 0; k < SCORCH.length; k += 4) {
     const x = wrap(SCORCH[k].x - cam.x * 0.1, SCORCH_SPAN) - 60;
-    glow(x, hy - 8, 50, '255,130,50', 0.12 * fl);
+    glow(x, hy - 8, 50, '255,130,50', 0.07 * fl);
   }
   // smoke columns leaning with the breeze
   const sf = 0.15, sspan = 520, soff = cam.x * sf;
@@ -398,7 +400,7 @@ function drawScorch(ctx, cam, world, time, lift) {
     const x = i * sspan - soff + 200;
     for (let k = 0; k < 8; k++) {
       const ph = (time * 0.04 + k / 8 + Math.abs(i) * 0.37) % 1;
-      ctx.fillStyle = `rgba(40,18,30,${0.3 * (1 - ph)})`;
+      ctx.fillStyle = `rgba(22,12,18,${0.38 * (1 - ph)})`;
       ctx.beginPath(); ctx.arc(x + ph * 90 + Math.sin(time * 0.5 + k) * 10, hy - ph * 320, 18 + ph * 46, 0, 6.283); ctx.fill();
     }
   }
@@ -557,31 +559,95 @@ function drawWaterwheel(ctx, cam, world, time, lift) {
   }
 }
 
-// Gale Locks: canal lock gates and pennants that stream out when a gust blows
+// Gale Locks: a flight of canal locks at dusk. Far lock gates stepping down the
+// canal, a near lock chamber with mitre gates, balance beams, paddle gear and a
+// keeper's lamp, then mooring posts on the towpath and pennants that stream out
+// when a gust blows.
 function drawLocks(ctx, cam, world, time, lift) {
-  drawWindmills(ctx, cam, time, lift);
   let gust = 0, dir = -1;
   for (const z of world.windZones ? world.windZones() : []) {
     if (z.rect.x > cam.x + cam.w || z.rect.x + z.rect.w < cam.x) continue;
     if (z.strength > gust) { gust = z.strength; dir = z.dir; }
   }
-  const f = 0.45, span = 440, base = H - 60 + lift * f, off = cam.x * f;
-  for (let i = Math.floor(off / span) - 1; i < Math.floor(off / span) + 4; i++) {
-    const x = i * span - off + 120;
-    // a lock gate: two posts, the gate leaf and its long balance beam
-    ctx.fillStyle = '#2a1640';
-    ctx.fillRect(x, base - 90, 12, 90); ctx.fillRect(x + 84, base - 90, 12, 90);
-    ctx.fillRect(x + 12, base - 76, 72, 60);
-    ctx.fillStyle = 'rgba(255,200,170,0.08)';
-    for (let k = 0; k < 4; k++) ctx.fillRect(x + 12, base - 70 + k * 14, 72, 3);
-    ctx.save(); ctx.translate(x + 90, base - 84); ctx.rotate(-0.08);
-    ctx.fillStyle = '#2a1640'; ctx.fillRect(0, -5, 110, 10);
-    ctx.restore();
-    ctx.fillStyle = 'rgba(200,170,220,0.25)';
-    ctx.fillRect(x - 40, base - 8, 180, 3);
+  // far: the canal running off as a flight of locks, each pound a step lower
+  const ff = 0.12, fbase = H - 190 + lift * ff, foff = cam.x * ff, fspan = 260;
+  ctx.fillStyle = '#1c323c';
+  for (let i = Math.floor(foff / fspan) - 1; i < Math.floor(foff / fspan) + 5; i++) {
+    const x = i * fspan - foff, step = (((i % 3) + 3) % 3) * 6;
+    ctx.fillRect(x, fbase + step - 8, fspan, 8);
+    ctx.fillRect(x + fspan - 10, fbase + step - 30, 8, 30);
+    ctx.fillRect(x + fspan - 46, fbase + step - 30, 40, 4);
+    ctx.fillStyle = 'rgba(150,200,205,0.16)'; ctx.fillRect(x, fbase + step, fspan, 2); ctx.fillStyle = '#1c323c';
+  }
+  // the near lock: water, chamber walls and gates
+  const f = 0.32, span = 560, wy = H - 112 + lift * f, off = cam.x * f;
+  const wg = ctx.createLinearGradient(0, wy - 4, 0, wy + 60);
+  wg.addColorStop(0, '#2c5862'); wg.addColorStop(1, '#0e1e26');
+  ctx.fillStyle = wg; ctx.fillRect(0, wy - 4, W, 64);
+  ctx.fillStyle = 'rgba(170,220,220,0.28)'; ctx.fillRect(0, wy - 4, W, 1.5);
+  ctx.strokeStyle = 'rgba(170,225,225,0.22)'; ctx.lineWidth = 1.5;
+  ctx.beginPath();
+  for (let k = 0; k < 14; k++) {
+    const rx = wrap(k * 97 - off * 1.1 + Math.sin(time * 0.6 + k) * 8, W + 60) - 30, ry = wy + 4 + (k % 4) * 7;
+    ctx.moveTo(rx, ry); ctx.lineTo(rx + 12 + (k % 3) * 6, ry);
+  }
+  ctx.stroke();
+  const dark = '#132229', mid = '#1a2e36';
+  for (let i = Math.floor(off / span) - 1; i < Math.floor(off / span) + 3; i++) {
+    const x = i * span - off + 40;
+    // chamber walls: coping stones along the water, a step down at each gate
+    ctx.fillStyle = mid; ctx.fillRect(x, wy - 22, 300, 18);
+    ctx.fillStyle = 'rgba(190,220,215,0.08)';
+    for (let k = 0; k < 300; k += 25) ctx.fillRect(x + k, wy - 22, 23, 2);
+    for (const [gx, sgn] of [[x + 12, -1], [x + 288, 1]]) {
+      // a mitre gate leaf with bracing, and its long balance beam
+      ctx.fillStyle = dark;
+      ctx.fillRect(gx - 12, wy - 86, 24, 82);
+      ctx.strokeStyle = 'rgba(150,190,190,0.14)'; ctx.lineWidth = 2;
+      ctx.beginPath(); ctx.moveTo(gx - 10, wy - 80); ctx.lineTo(gx + 10, wy - 12); ctx.moveTo(gx - 10, wy - 48); ctx.lineTo(gx + 10, wy - 48); ctx.stroke();
+      ctx.save(); ctx.translate(gx, wy - 84); ctx.rotate(sgn * -0.07);
+      ctx.fillStyle = dark; ctx.fillRect(sgn > 0 ? 0 : -118, -5, 118, 10);
+      ctx.restore();
+      // paddle gear on the gate's walkway
+      ctx.strokeStyle = dark; ctx.lineWidth = 3;
+      ctx.beginPath(); ctx.arc(gx - sgn * 24, wy - 100, 7, 0, 6.283); ctx.moveTo(gx - sgn * 24, wy - 93); ctx.lineTo(gx - sgn * 24, wy - 86); ctx.stroke();
+    }
+    // water spilling through the bottom gate's paddles
+    ctx.strokeStyle = 'rgba(200,235,235,0.4)'; ctx.lineWidth = 2;
+    for (let k = 0; k < 5; k++) {
+      const ph = (time * 2 + k / 5) % 1;
+      ctx.beginPath(); ctx.moveTo(x + 304 + k * 3, wy - 14 + ph * 10); ctx.lineTo(x + 305 + k * 3, wy - 8 + ph * 10); ctx.stroke();
+    }
+    // the lock-keeper's cottage and lamp
+    const hx = x + 360;
+    ctx.fillStyle = dark;
+    ctx.fillRect(hx, wy - 96, 92, 76);
+    ctx.beginPath(); ctx.moveTo(hx - 8, wy - 94); ctx.lineTo(hx + 46, wy - 132); ctx.lineTo(hx + 100, wy - 94); ctx.fill();
+    ctx.fillRect(hx + 66, wy - 138, 10, 26);
+    ctx.fillStyle = '#ffd890'; ctx.fillRect(hx + 18, wy - 76, 12, 14); ctx.fillRect(hx + 56, wy - 76, 12, 14);
+    glow(hx + 24, wy - 69, 26, '255,200,130', 0.3); glow(hx + 62, wy - 69, 22, '255,200,130', 0.22);
+    ctx.fillStyle = dark; ctx.fillRect(x + 150, wy - 84, 4, 62); ctx.fillRect(x + 146, wy - 88, 12, 6);
+    const fl = 1 + Math.sin(time * 8 + i) * 0.06;
+    glow(x + 152, wy - 80, 40 * fl, '255,200,120', 0.25); glow(x + 152, wy - 80, 8, '255,240,190', 0.8);
+    ctx.strokeStyle = 'rgba(255,200,120,0.16)'; ctx.lineWidth = 2;
+    for (let k = 0; k < 3; k++) { const ry = wy + 8 + k * 6; ctx.beginPath(); ctx.moveTo(x + 142 + Math.sin(time * 2 + k) * 4, ry); ctx.lineTo(x + 162 + Math.sin(time * 2.6 + k) * 4, ry); ctx.stroke(); }
+  }
+  // near: mooring bollards along the towpath with slack ropes, and the pennants
+  const nf = 0.45, nbase = H - 56 + lift * nf, noff = cam.x * nf, nspan = 150;
+  ctx.fillStyle = '#0e1a20'; ctx.strokeStyle = '#0e1a20'; ctx.lineWidth = 2;
+  for (let i = Math.floor(noff / nspan) - 1; i < Math.floor(noff / nspan) + 8; i++) {
+    const x = i * nspan - noff + 30;
+    ctx.fillRect(x - 6, nbase - 26, 12, 26);
+    ctx.beginPath(); ctx.ellipse(x, nbase - 26, 9, 4, 0, 0, 6.283); ctx.fill();
+    if (i % 2) {
+      ctx.beginPath(); ctx.moveTo(x + 6, nbase - 18); ctx.quadraticCurveTo(x + nspan / 2, nbase + 2, x + nspan - 6, nbase - 18); ctx.stroke();
+    }
+  }
+  const pspan = 440;
+  for (let i = Math.floor(noff / pspan) - 1; i < Math.floor(noff / pspan) + 4; i++) {
     // the pennant: droops in the calm, streams out with the gust
-    const px = x + 220, py = base - 150;
-    ctx.fillStyle = '#2a1640'; ctx.fillRect(px - 2, py, 4, 150);
+    const px = i * pspan - noff + 340, py = nbase - 150;
+    ctx.fillStyle = '#0e1a20'; ctx.fillRect(px - 2, py, 4, 150);
     const len = 30 + gust * 26, droop = 1.25 * (1 - gust), seg = 6;
     const pt = (u, edge) => {
       const wv = Math.sin(time * (4 + gust * 10) - u * 5 + i) * (2 + gust * 4) * u;

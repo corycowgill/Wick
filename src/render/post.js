@@ -8,6 +8,7 @@ let vignette = null, grain = null, grainAlpha = 0.07;
 const GRADES = {
   dusk: ['#ff8a50', 0.12], harvest: ['#ff7a30', 0.15], violet: ['#9a60ff', 0.12], wind: ['#ff6a8a', 0.1],
   rain: ['#4a7aff', 0.16], canal: ['#3ab8c8', 0.12], tower: ['#6a70ff', 0.15], fair: ['#ff5a30', 0.14], barn: ['#ffa050', 0.13], cold: ['#6a9aff', 0.18], castle: ['#ff5040', 0.08], works: ['#ff8a30', 0.1],
+  locks: ['#40a8b0', 0.12], scorch: ['#ff7030', 0.07],
 };
 // light shafts: [colour rgb, alpha, angle]
 const SHAFTS = {

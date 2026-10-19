@@ -120,6 +120,8 @@ export const Lighting = {
     const W = CFG.VIEW_W, H = CFG.VIEW_H;
     const vx = camera.vx, vy = camera.vy;
     const s = this.scale;
+    // where Wick is on screen, so the low-wax vignette can leave a warm clearing round them
+    if (player) { this.fx = player.x + player.w / 2 - vx; this.fy = player.y + player.h * 0.5 - vy; }
     lctx.setTransform(1, 0, 0, 1, 0, 0);
     lctx.globalCompositeOperation = 'source-over';
     lctx.clearRect(0, 0, layer.width, layer.height);
@@ -186,23 +188,28 @@ export const Lighting = {
     }
   },
 
-  // Low wax: screen edges drain of colour toward a cold blue.
+  fx: 0, fy: 0,
+  // Low wax: the world drains of colour toward a cold blue, everywhere but a warm
+  // clearing round Wick, so tiny Wick stays the brightest, warmest thing in view.
   coldVignette(ctx, frac, time) {
     const k = clamp((0.45 - frac) / 0.45, 0, 1);
     if (k <= 0) return;
     const W = CFG.VIEW_W, H = CFG.VIEW_H;
     const pulse = frac < 0.15 ? 0.1 * Math.sin(time * 6) : 0;
+    const cx = clamp(this.fx || W / 2, 0, W), cy = clamp(this.fy || H / 2, 0, H);
+    const far = Math.max(Math.hypot(cx, cy), Math.hypot(W - cx, cy), Math.hypot(cx, H - cy), Math.hypot(W - cx, H - cy));
     ctx.save();
     if (this.desaturate) {
       ctx.globalCompositeOperation = 'saturation';
-      const g = ctx.createRadialGradient(W / 2, H / 2, H * 0.25, W / 2, H / 2, W * 0.62);
+      const g = ctx.createRadialGradient(cx, cy, 100, cx, cy, Math.max(far, 240));
       g.addColorStop(0, 'rgba(128,128,128,0)');
+      g.addColorStop(0.35, `rgba(128,128,128,${0.55 * k})`);
       g.addColorStop(1, `rgba(128,128,128,${k})`);
       ctx.fillStyle = g;
       ctx.fillRect(0, 0, W, H);
     }
     ctx.globalCompositeOperation = 'source-over';
-    const g2 = ctx.createRadialGradient(W / 2, H / 2, H * 0.3, W / 2, H / 2, W * 0.62);
+    const g2 = ctx.createRadialGradient(cx, cy, 120, cx, cy, Math.max(far * 0.95, 260));
     g2.addColorStop(0, 'rgba(40,70,140,0)');
     g2.addColorStop(1, `rgba(40,70,150,${(0.45 + pulse) * k})`);
     ctx.fillStyle = g2;
