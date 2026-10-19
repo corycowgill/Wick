@@ -6,10 +6,13 @@ import { drawFlame } from './draw-wick.js';
 import { drawThemeSky, drawThemeBackdrop, drawWallMotif } from './theme-fx.js';
 import { skyline } from './lighting.js';
 import { Post } from './post.js';
+import { Settings } from '../settings.js';
 import LEVEL_LIST from '../levels/index.js';
+import { pieceAt, drawPieceCell, drawPieceBacks, drawPieceFx } from './set-pieces.js';
 
 const T = CFG.TILE;
 const OUT = '#1c0d2a';
+const MAT_BEAM = 1, MAT_POST = 2, MAT_PIECE = 3;
 
 // ------------------------------------------------------------ helpers
 function canvas(w, h) {
@@ -146,15 +149,117 @@ const STONES = {
 
 // ------------------------------------------------------------ tile sprites (2x)
 const spriteCache = new Map();
-function spritesFor(theme) {
-  const key = theme.name + '|' + theme.stone + '|' + (theme.backwall || '');
-  if (!spriteCache.has(key)) spriteCache.set(key, buildSprites(STONES[theme.stone] || STONES.plum, theme.backwall, theme.name));
+function spritesFor(theme, world) {
+  const scene = world.data && world.data.scene;
+  const pattern = SCENE_PATTERN[scene] || PATTERN[theme.name] || 'cobble';
+  const key = theme.name + '|' + theme.stone + '|' + (theme.backwall || '') + '|' + pattern;
+  if (!spriteCache.has(key)) spriteCache.set(key, buildSprites(STONES[theme.stone] || STONES.plum, theme.backwall, theme.name, pattern));
   return spriteCache.get(key);
 }
 
-function buildSprites(pal, wallKind, themeName) {
+// How each theme lays its stone: the canal and lock quays are dressed ashlar, the
+// works is brick, the tower and castle are big cut blocks, the cold quarter is
+// stacked slate and the hollow is rough fieldstone. Everything else is cobbles.
+const PATTERN = {
+  canal: 'ashlar', locks: 'ashlar', works: 'brick', tower: 'ashlar', castle: 'ashlar',
+  cold: 'slate', violet: 'field', scorch: 'field',
+};
+// levels sharing a theme get their own stonework: the storm mill and the clockwork
+// yard are brick (not Rain Alley's setts or the bell tower's blocks), the moth mill ashlar
+const SCENE_PATTERN = { waterwheel: 'brick', gears: 'brick', mothmoon: 'ashlar' };
+// Timber for thin slabs and lone posts: [body, light, dark, boards]
+const WOOD = {
+  tower: ['#5e3e30', '#7a5440', '#2e1a1e', '#8a6446'],
+  barn: ['#6e4430', '#8e5c3c', '#38201c', '#a2703e'],
+  cold: ['#4e5466', '#6a7286', '#262a3c', '#7e8698'],
+  scorch: ['#3a2622', '#52362c', '#1a0e10', '#5e3e2e'],
+  wind: ['#5c4446', '#7a5c58', '#2c1c26', '#8e6c5e'],
+  locks: ['#46524e', '#5e6c66', '#1e2828', '#6e7c72'],
+  canal: ['#4a4252', '#62586a', '#221c2c', '#76687a'],
+  rain: ['#463a4a', '#5e4e60', '#201828', '#6e5c6a'],
+};
+const woodOf = (name) => WOOD[name] || ['#5e4034', '#7c5844', '#2e1a20', '#8e6648'];
+
+function buildSprites(pal, wallKind, themeName, pattern) {
   const S = 2, P = T * S;
   const make = (fn, w = T, h = T) => { const c = canvas(w * S, h * S); const g = c.getContext('2d'); g.scale(S, S); fn(g); return c; };
+  // big cut blocks with a bevel: lit top-left edges, shaded bottom-right
+  const ashlar = (g, r, k = 1) => {
+    g.fillStyle = pal.mortar; g.fillRect(0, 0, T, T);
+    for (let row = 0; row < 2; row++) {
+      const y = row * 16;
+      let x = row ? -10 - r() * 8 : -r() * 6;
+      while (x < T) {
+        const w = 15 + r() * 15;
+        g.fillStyle = pal.cols[(r() * pal.cols.length) | 0];
+        roundRect(g, x + 0.8, y + 0.8, w - 1.6, 14.4, 2); g.fill();
+        g.fillStyle = `rgba(255,228,210,${0.14 * k})`; g.fillRect(x + 2, y + 1.6, w - 4, 1.4); g.fillRect(x + 1.6, y + 2, 1.2, 11);
+        g.fillStyle = `rgba(16,6,26,${0.26 * k})`; g.fillRect(x + 2, y + 12.6, w - 4, 1.6); g.fillRect(x + w - 2.8, y + 2.5, 1.2, 10);
+        // tooling marks and the odd hairline crack
+        if (r() < 0.5) { g.fillStyle = 'rgba(20,8,28,0.14)'; for (let k2 = 0; k2 < 3; k2++) g.fillRect(x + 4 + r() * (w - 8), y + 4 + r() * 7, 2.4, 0.8); }
+        if (r() < 0.16) {
+          g.strokeStyle = 'rgba(14,4,22,0.4)'; g.lineWidth = 0.8;
+          const cx = x + 4 + r() * (w - 8);
+          g.beginPath(); g.moveTo(cx, y + 2); g.lineTo(cx + 2, y + 7); g.lineTo(cx + 0.5, y + 13); g.stroke();
+        }
+        x += w;
+      }
+    }
+  };
+  // running-bond brick: 16x8 with a fired-colour spread and the odd burnt brick
+  const bricks = (g, r) => {
+    g.fillStyle = pal.mortar; g.fillRect(0, 0, T, T);
+    for (let row = 0; row < 4; row++) {
+      const y = row * 8;
+      for (let x = row % 2 ? -8 : 0; x < T; x += 16) {
+        const burnt = r() < 0.12;
+        g.fillStyle = burnt ? '#4e2c34' : pal.cols[(r() * pal.cols.length) | 0];
+        g.fillRect(x + 0.7, y + 0.7, 14.6, 6.6);
+        g.fillStyle = 'rgba(255,220,200,0.13)'; g.fillRect(x + 1.2, y + 1, 13.6, 1.1);
+        g.fillStyle = 'rgba(18,6,24,0.24)'; g.fillRect(x + 1.2, y + 5.9, 13.6, 1.2);
+        if (r() < 0.2) { g.fillStyle = 'rgba(18,6,24,0.3)'; g.fillRect(x + 2 + r() * 10, y + 2.5 + r() * 2, 2.2, 1.6); }
+      }
+    }
+  };
+  // stacked slate: thin layered slabs with frost-pale top edges
+  const slates = (g, r) => {
+    g.fillStyle = pal.mortar; g.fillRect(0, 0, T, T);
+    let y = 0;
+    while (y < T) {
+      const h = 4.5 + r() * 3.5;
+      let x = -r() * 14;
+      while (x < T) {
+        const w = 12 + r() * 16;
+        g.fillStyle = pal.cols[(r() * pal.cols.length) | 0];
+        g.beginPath(); g.moveTo(x + 1, y + 0.8); g.lineTo(x + w - 1, y + 0.8 + r()); g.lineTo(x + w - 2, y + h - 0.6); g.lineTo(x + 2, y + h - 0.6); g.closePath(); g.fill();
+        g.fillStyle = 'rgba(220,232,255,0.2)'; g.fillRect(x + 2, y + 1, w - 4, 1);
+        g.fillStyle = 'rgba(10,12,30,0.25)'; g.fillRect(x + 2, y + h - 1.6, w - 4, 1);
+        x += w;
+      }
+      y += h;
+    }
+  };
+  // rough fieldstone: big rounded stones of mixed size
+  const field = (g, r) => {
+    g.fillStyle = pal.mortar; g.fillRect(0, 0, T, T);
+    const hs = [13 + r() * 5];
+    hs.push(T - hs[0]);
+    let y = 0;
+    for (const h of hs) {
+      let x = -r() * 10;
+      while (x < T) {
+        const w = 11 + r() * 14;
+        g.fillStyle = pal.cols[(r() * pal.cols.length) | 0];
+        g.beginPath(); g.ellipse(x + w / 2, y + h / 2, w / 2 - 0.8, h / 2 - 0.8, (r() - 0.5) * 0.3, 0, 6.283); g.fill();
+        g.fillStyle = 'rgba(255,225,215,0.15)'; g.beginPath(); g.ellipse(x + w / 2 - 1, y + 3, w / 2 - 4, 1.4, 0, 0, 6.283); g.fill();
+        g.fillStyle = 'rgba(16,6,28,0.24)'; g.beginPath(); g.ellipse(x + w / 2, y + h - 2.5, w / 2 - 3, 1.3, 0, 0, 6.283); g.fill();
+        x += w;
+      }
+      y += h;
+    }
+  };
+  const masonry = (g, r) => pattern === 'ashlar' ? ashlar(g, r) : pattern === 'brick' ? bricks(g, r)
+    : pattern === 'slate' ? slates(g, r) : pattern === 'field' ? field(g, r) : cobbles(g, r);
   const cobbles = (g, r) => {
     g.fillStyle = pal.mortar; g.fillRect(0, 0, T, T);
     const rows = 3;
@@ -208,20 +313,38 @@ function buildSprites(pal, wallKind, themeName) {
   };
   const stone = [], top = [];
   for (let v = 0; v < 4; v++) {
-    stone.push(make((g) => cobbles(g, rng(11 + v * 7))));
-    top.push(make((g) => { const r = rng(91 + v * 13); cobbles(g, r); topper(g, r); }));
+    stone.push(make((g) => masonry(g, rng(11 + v * 7))));
+    top.push(make((g) => { const r = rng(91 + v * 13); masonry(g, r); topper(g, r); }));
   }
-  const plank = make((g) => {
-    g.fillStyle = '#a8643a'; g.fillRect(0, 0, T, 9);
-    g.fillStyle = '#c47e48'; g.fillRect(0, 0, T, 2.5);
-    g.fillStyle = '#6c3a24'; g.fillRect(15, 0, 1.5, 9); g.fillRect(0, 8, T, 1.5);
-    g.fillStyle = '#3a2430'; g.fillRect(4, 3.5, 1.6, 1.6); g.fillRect(26, 3.5, 1.6, 1.6);
+  // one-way planks: the same thin board and struts everywhere, so they always read
+  // as pass-through, but each board has its own seam, knots and nails, a run has cut
+  // ends, and the struts sit at the ends and every other board (not a zigzag)
+  const plank = [];
+  for (let v = 0; v < 3; v++) {
+    plank.push(make((g) => {
+      const r = rng(1200 + v * 19);
+      g.fillStyle = '#a8643a'; g.fillRect(0, 0, T, 9);
+      g.fillStyle = ['#c47e48', '#bc7642', '#ca8650'][v]; g.fillRect(0, 0, T, 2.5);
+      const seam = [15, 9, 22][v];
+      g.fillStyle = '#6c3a24'; g.fillRect(seam, 0, 1.5, 9); g.fillRect(0, 8, T, 1.5);
+      g.strokeStyle = 'rgba(90,44,26,0.5)'; g.lineWidth = 0.7;
+      g.beginPath(); g.moveTo(0, 4.5 + r()); g.bezierCurveTo(10, 3.5 + r() * 2, 20, 6, T, 4.5 + r()); g.stroke();
+      if (v !== 1) { g.fillStyle = 'rgba(90,44,26,0.7)'; g.beginPath(); g.ellipse(seam + (v ? -7 : 8), 5, 1.8, 1.1, 0, 0, 6.283); g.fill(); }
+      g.fillStyle = '#3a2430'; g.fillRect(seam - 3.5, 3.5, 1.6, 1.6); g.fillRect(seam + 3.5, 3.5, 1.6, 1.6);
+      if (pal.top === 'snow') { g.fillStyle = '#e6ecf8'; g.fillRect(0, -1, T, 2.5); }
+    }));
+  }
+  const struts = make((g) => {
     g.strokeStyle = '#6c3a24'; g.lineWidth = 2;
     g.beginPath(); g.moveTo(6, 9); g.lineTo(12, 17); g.moveTo(26, 9); g.lineTo(20, 17); g.stroke();
-    if (pal.top === 'snow') { g.fillStyle = '#e6ecf8'; g.fillRect(0, -1, T, 2.5); }
+  });
+  const plankEnd = (side) => make((g) => {
+    const x = side > 0 ? 0 : T - 3;
+    g.fillStyle = '#6c3a24'; g.fillRect(x, 0.5, 3, 8.5);
+    g.fillStyle = 'rgba(255,220,170,0.25)'; g.fillRect(x + 1, 1.5, 1, 6);
   });
   const emitter = make((g) => {
-    cobbles(g, rng(5));
+    masonry(g, rng(5));
     g.fillStyle = '#2a1830'; g.fillRect(6, T - 6, T - 12, 6);
     g.fillStyle = '#3a9a94'; g.fillRect(4, T - 8, T - 8, 2.5);
     g.fillStyle = '#2f7f7c';
@@ -236,6 +359,155 @@ function buildSprites(pal, wallKind, themeName) {
     }
     g.fillStyle = '#4a3a4e'; g.fillRect(0, 5, T, 4); g.fillRect(0, T - 9, T, 4);
     g.fillStyle = '#8a7a90'; g.fillRect(4, 6, 2, 2); g.fillRect(26, 6, 2, 2); g.fillRect(4, T - 8, 2, 2); g.fillRect(26, T - 8, 2, 2);
+  });
+
+  // timber: a thin slab is a heavy beam with floorboards on top, a lone column a
+  // squared post. Full-tile and dark, so it never reads as a thin one-way plank.
+  const [wBody, wLite, wDark, wBoard] = woodOf(themeName);
+  const grain = (g, r, x0, y0, x1, y1, vertical) => {
+    g.strokeStyle = 'rgba(16,6,10,0.28)'; g.lineWidth = 0.7;
+    g.beginPath();
+    for (let k = 0; k < 4; k++) {
+      if (vertical) { const x = x0 + 3 + r() * (x1 - x0 - 6); g.moveTo(x, y0); g.bezierCurveTo(x + 2, y0 + 10, x - 2, y0 + 20, x + 1, y1); } else { const y = y0 + 2 + r() * (y1 - y0 - 4); g.moveTo(x0, y); g.bezierCurveTo(x0 + 10, y + 1.5, x0 + 20, y - 1.5, x1, y + 0.5); }
+    }
+    g.stroke();
+  };
+  const beam = [];
+  for (let v = 0; v < 4; v++) {
+    beam.push(make((g) => {
+      const r = rng(1300 + v * 29);
+      g.fillStyle = wDark; g.fillRect(0, 0, T, T);
+      // floorboards
+      g.fillStyle = wBoard; g.fillRect(0, 0, T, 8);
+      g.fillStyle = 'rgba(255,235,210,0.18)'; g.fillRect(0, 0.6, T, 1.2);
+      g.fillStyle = 'rgba(10,4,10,0.45)'; g.fillRect(0, 7, T, 1.4);
+      const seam = 6 + r() * 20; g.fillRect(seam, 0, 1.2, 7.5);
+      // the beam below, with a shaded underside
+      g.fillStyle = wBody; g.fillRect(0, 9, T, T - 12);
+      g.fillStyle = 'rgba(255,230,200,0.12)'; g.fillRect(0, 9.5, T, 1.2);
+      grain(g, r, 0, 11, T, T - 4, false);
+      const sh = g.createLinearGradient(0, T - 12, 0, T);
+      sh.addColorStop(0, 'rgba(10,4,14,0)'); sh.addColorStop(1, 'rgba(10,4,14,0.55)');
+      g.fillStyle = sh; g.fillRect(0, T - 12, T, 12);
+      if (r() < 0.4) { g.fillStyle = 'rgba(10,4,10,0.45)'; g.beginPath(); g.ellipse(6 + r() * 20, 15 + r() * 8, 2.4, 1.5, 0, 0, 6.283); g.fill(); }
+      if (v === 1 || v === 3) {             // an iron strap with bolts
+        const x = v === 1 ? 10 : 20;
+        g.fillStyle = '#2c2832'; g.fillRect(x, 9, 5, T - 10);
+        g.fillStyle = '#8a8496'; g.fillRect(x + 1.6, 13, 1.8, 1.8); g.fillRect(x + 1.6, T - 8, 1.8, 1.8);
+      }
+      if (pal.top === 'snow') { g.fillStyle = '#e6ecf8'; g.fillRect(0, 0, T, 2.6); g.fillStyle = '#ffffff'; g.fillRect(3 + r() * 16, 0.4, 6, 1); }
+    }));
+  }
+  // the cut end of a beam: dark end grain with growth rings
+  const beamEnd = (side) => make((g) => {
+    const x0 = side > 0 ? 0 : T - 7;
+    g.fillStyle = wDark; g.fillRect(x0, 9, 7, T - 10);
+    g.strokeStyle = 'rgba(255,220,180,0.16)'; g.lineWidth = 0.8;
+    g.beginPath(); g.ellipse(x0 + 3.5, 20, 2, 6, 0, 0, 6.283); g.stroke();
+  });
+  // splintered floorboards poking out over a hole (12 px wide, drawn across the edge)
+  const splinters = (side) => make((g) => {
+    const r = rng(side > 0 ? 79 : 83);
+    const e = 6;
+    g.fillStyle = wBoard; g.strokeStyle = OUT; g.lineWidth = 1;
+    g.beginPath(); g.moveTo(e, 0.5);
+    for (let y = 1; y <= 7; y += 2) g.lineTo(e - side * (2 + r() * 4), y);
+    g.lineTo(e, 7.5); g.closePath(); g.fill(); g.stroke();
+    g.strokeStyle = wLite; g.lineWidth = 0.8;
+    g.beginPath(); g.moveTo(e - side * 1, 2.5); g.lineTo(e - side * 4, 3.5); g.stroke();
+  }, 12, T);
+  const post = [];
+  for (let v = 0; v < 2; v++) {
+    post.push(make((g) => {
+      const r = rng(1500 + v * 37);
+      g.fillStyle = wDark; g.fillRect(0, 0, T, T);
+      g.fillStyle = wBody; g.fillRect(2, 0, T - 4, T);
+      g.fillStyle = 'rgba(255,230,200,0.14)'; g.fillRect(3.5, 0, 1.6, T);
+      g.fillStyle = 'rgba(10,4,14,0.35)'; g.fillRect(T - 8, 0, 6, T);
+      g.fillStyle = 'rgba(10,4,10,0.4)'; g.fillRect(T / 2 - 0.6, 0, 1.2, T);
+      grain(g, r, 2, 0, T - 2, T, true);
+      if (v) { g.fillStyle = '#2c2832'; g.fillRect(0, 12, T, 4); g.fillStyle = '#8a8496'; g.fillRect(5, 13, 1.8, 1.8); g.fillRect(T - 7, 13, 1.8, 1.8); }
+    }));
+  }
+  const postTop = make((g) => {
+    g.fillStyle = wLite; g.fillRect(1, 0, T - 2, 5);
+    g.strokeStyle = 'rgba(30,14,20,0.5)'; g.lineWidth = 0.8;
+    g.beginPath(); g.ellipse(T / 2, 2.5, 8, 1.6, 0, 0, 6.283); g.stroke();
+    if (pal.top === 'snow') { g.fillStyle = '#e6ecf8'; g.fillRect(0, 0, T, 3); }
+  });
+
+  // wear on exposed stone: a darker worn band and chips along open sides, a shaded
+  // lip with stains under overhangs, cracks, and theme grime (moss, soot, frost, damp)
+  const STAIN = {
+    canal: 'moss', locks: 'moss', rain: 'moss', castle: 'moss', tower: 'moss', violet: 'moss',
+    works: 'soot', scorch: 'soot', cold: 'frost', barn: 'straw',
+  }[themeName];
+  const side = (s) => make((g) => {
+    const r = rng(s > 0 ? 1701 : 1703);
+    const x = s > 0 ? 0 : T - 6;
+    const gr = g.createLinearGradient(s > 0 ? 0 : T, 0, s > 0 ? 7 : T - 7, 0);
+    gr.addColorStop(0, 'rgba(14,4,24,0.38)'); gr.addColorStop(1, 'rgba(14,4,24,0)');
+    g.fillStyle = gr; g.fillRect(x, 0, 7, T);
+    g.fillStyle = pal.mortar;
+    for (let y = 3; y < T - 2; y += 6 + r() * 8) { g.beginPath(); g.ellipse(s > 0 ? 1 : T - 1, y, 1.6 + r() * 1.4, 1.4 + r(), 0, 0, 6.283); g.fill(); }
+    if (STAIN === 'moss') {
+      g.fillStyle = 'rgba(58,120,96,0.55)';
+      for (let y = 0; y < T; y += 3) if (r() < 0.45) g.fillRect(s > 0 ? 0.5 : T - 3, y, 2.4, 2 + r() * 3);
+    } else if (STAIN === 'frost') {
+      g.fillStyle = 'rgba(220,235,255,0.5)'; g.fillRect(s > 0 ? 0 : T - 2, 0, 2, T);
+    }
+  });
+  const under = make((g) => {
+    const r = rng(1709);
+    const gr = g.createLinearGradient(0, T - 9, 0, T);
+    gr.addColorStop(0, 'rgba(14,4,24,0)'); gr.addColorStop(1, 'rgba(14,4,24,0.45)');
+    g.fillStyle = gr; g.fillRect(0, T - 9, T, 9);
+    const col = STAIN === 'moss' ? 'rgba(58,120,96,0.5)' : STAIN === 'soot' ? 'rgba(14,6,10,0.45)' : STAIN === 'frost' ? 'rgba(220,235,255,0.55)' : 'rgba(14,4,24,0.3)';
+    g.fillStyle = col;
+    for (let x = 1; x < T - 2; x += 3 + r() * 4) g.fillRect(x, T - 3 - r() * 7, 1.6, 10);
+  });
+  const crack = [];
+  for (let v = 0; v < 3; v++) {
+    crack.push(make((g) => {
+      const r = rng(1801 + v * 13);
+      g.strokeStyle = 'rgba(12,4,20,0.5)'; g.lineWidth = 0.9; g.lineCap = 'round';
+      let x = 6 + r() * 20, y = 3 + r() * 6;
+      g.beginPath(); g.moveTo(x, y);
+      for (let k = 0; k < 4; k++) { x += (r() - 0.5) * 9; y += 4 + r() * 5; g.lineTo(x, y); if (r() < 0.4) { g.lineTo(x + (r() - 0.5) * 8, y + 3); g.moveTo(x, y); } }
+      g.stroke();
+      g.strokeStyle = 'rgba(255,225,210,0.12)'; g.lineWidth = 0.6; g.stroke();
+    }));
+  }
+  // theme grime patches for wall faces
+  const stain = [];
+  if (STAIN) for (let v = 0; v < 2; v++) {
+    stain.push(make((g) => {
+      const r = rng(1901 + v * 17);
+      if (STAIN === 'moss') {
+        for (let k = 0; k < 4; k++) {
+          const x = 3 + r() * 24;
+          g.fillStyle = 'rgba(52,112,88,0.5)'; g.fillRect(x, 0, 2.2, 6 + r() * 16);
+          g.fillStyle = 'rgba(90,160,120,0.35)'; g.beginPath(); g.ellipse(x + 1, 1, 3, 1.8, 0, 0, 6.283); g.fill();
+        }
+      } else if (STAIN === 'soot') {
+        const gr = g.createRadialGradient(16, 6, 1, 16, 10, 18);
+        gr.addColorStop(0, 'rgba(10,4,8,0.5)'); gr.addColorStop(1, 'rgba(10,4,8,0)');
+        g.fillStyle = gr; g.fillRect(0, 0, T, T);
+      } else if (STAIN === 'frost') {
+        g.fillStyle = 'rgba(220,235,255,0.35)';
+        for (let k = 0; k < 7; k++) { g.beginPath(); g.arc(r() * T, r() * T, 1 + r() * 2.2, 0, 6.283); g.fill(); }
+      } else {
+        g.strokeStyle = 'rgba(230,190,90,0.6)'; g.lineWidth = 0.9;
+        g.beginPath(); for (let k = 0; k < 6; k++) { const x = r() * T, y = 4 + r() * 24; g.moveTo(x, y); g.lineTo(x + 3 + r() * 4, y + (r() - 0.5) * 3); } g.stroke();
+      }
+    }));
+  }
+  // contact shadow in the inner corner where a floor meets a wall
+  const ao = (s) => make((g) => {
+    const cx = s > 0 ? 0 : T;
+    const gr = g.createRadialGradient(cx, T, 0, cx, T, 18);
+    gr.addColorStop(0, 'rgba(12,4,22,0.5)'); gr.addColorStop(1, 'rgba(12,4,22,0)');
+    g.fillStyle = gr; g.fillRect(0, 0, T, T);
   });
 
   // soft shadow under overhangs and beside walls
@@ -285,7 +557,7 @@ function buildSprites(pal, wallKind, themeName) {
   }
 
   // back walls for interiors, plus a few details
-  let walls = null, details = null;
+  let walls = null, details = null, piers = null, skirt = null;
   if (wallKind) {
     const W = {
       brick: { mortar: '#1a1028', cols: ['#2e1e3e', '#33223f', '#291a38'], bw: 16, bh: 8 },
@@ -308,6 +580,61 @@ function buildSprites(pal, wallKind, themeName) {
         }
       }));
     }
+    // two worn variants, so a long wall is not wallpaper: a damp tide stain, and a
+    // patch of old plaster (whitewash on the barn's boards) flaking off the wall
+    for (let v = 0; v < 2; v++) {
+      walls.push(make((g) => {
+        const r = rng(560 + v * 37);
+        g.drawImage(walls[v], 0, 0, T, T);
+        if (v === 0) {
+          const gr = g.createLinearGradient(0, 8, 0, T);
+          gr.addColorStop(0, 'rgba(8,4,16,0)'); gr.addColorStop(0.6, 'rgba(8,4,16,0.22)'); gr.addColorStop(1, 'rgba(8,4,16,0.32)');
+          g.fillStyle = gr; g.fillRect(0, 8, T, T - 8);
+          g.strokeStyle = 'rgba(160,150,170,0.08)'; g.lineWidth = 1;
+          g.beginPath(); g.moveTo(0, 10); for (let x = 0; x <= T; x += 4) g.lineTo(x, 9 + r() * 3); g.stroke();
+        } else {
+          g.fillStyle = wallKind === 'barn' ? 'rgba(200,180,160,0.1)' : 'rgba(170,150,170,0.12)';
+          g.beginPath(); g.moveTo(4 + r() * 4, 3);
+          for (let k = 0; k < 7; k++) { const a = k / 7 * 6.283; g.lineTo(16 + Math.cos(a) * (8 + r() * 6), 15 + Math.sin(a) * (7 + r() * 5)); }
+          g.closePath(); g.fill();
+          g.fillStyle = 'rgba(8,4,16,0.25)'; for (let k = 0; k < 4; k++) g.fillRect(8 + r() * 16, 8 + r() * 14, 1.5, 1.5);
+        }
+      }));
+    }
+    // a pilaster every few bays: piers of brick, castle stone or slate, or a barn post
+    // with knee braces. Vertical, so it never reads as a ledge.
+    const pier = (part) => make((g) => {
+      const r = rng(590);
+      if (wallKind === 'barn') {
+        g.fillStyle = 'rgba(16,6,12,0.55)'; g.fillRect(9, 0, 14, T);
+        g.fillStyle = 'rgba(120,70,50,0.18)'; g.fillRect(10, 0, 2, T);
+        if (part === 'cap') {
+          g.strokeStyle = 'rgba(16,6,12,0.55)'; g.lineWidth = 3.5;
+          g.beginPath(); g.moveTo(10, 18); g.lineTo(-6, 1); g.moveTo(22, 18); g.lineTo(38, 1); g.stroke();
+        }
+        return;
+      }
+      const col = { brick: '#3a2848', slate: '#2c3456', castle: '#3e2a3c' }[wallKind] || '#3a2848';
+      g.fillStyle = 'rgba(8,4,16,0.4)'; g.fillRect(6, 0, 22, T);
+      g.fillStyle = col; g.fillRect(7, 0, 18, T);
+      g.fillStyle = 'rgba(8,4,16,0.35)';
+      for (let y = 0; y < T; y += wallKind === 'castle' ? 16 : 8) g.fillRect(7, y, 18, 1);
+      g.fillStyle = 'rgba(255,220,230,0.07)'; g.fillRect(8, 0, 2, T);
+      g.fillStyle = 'rgba(8,4,16,0.3)'; g.fillRect(21, 0, 4, T);
+      if (part === 'cap' || part === 'base') {
+        const y = part === 'cap' ? 0 : T - 7;
+        g.fillStyle = col; g.fillRect(3, y, 26, 7);
+        g.fillStyle = 'rgba(255,220,230,0.1)'; g.fillRect(3, y, 26, 1.2);
+        g.fillStyle = 'rgba(8,4,16,0.4)'; g.fillRect(3, y + 5.6, 26, 1.4);
+      }
+    });
+    piers = { mid: pier('mid'), cap: pier('cap'), base: pier('base') };
+    // grime gathered along the foot of the wall
+    skirt = make((g) => {
+      const gr = g.createLinearGradient(0, T - 14, 0, T);
+      gr.addColorStop(0, 'rgba(8,4,16,0)'); gr.addColorStop(1, 'rgba(8,4,16,0.35)');
+      g.fillStyle = gr; g.fillRect(0, T - 14, T, 14);
+    });
     // window glass per theme: warm lamplight, rain-streaked moonlit panes (rain),
     // a pale clock-face oculus (tower); each has a dark, unlit twin
     const pane = (g, glass, hi, frame) => {
@@ -404,6 +731,12 @@ function buildSprites(pal, wallKind, themeName) {
   for (let v = 0; v < 6; v++) {
     rock.push(make((g) => {
       const r = rng(700 + v * 41);
+      if (pattern === 'brick' || pattern === 'ashlar' || pattern === 'slate') {
+        // laid masonry stays laid all the way in; the depth shading darkens it
+        masonry(g, r);
+        if (v >= 4) { g.strokeStyle = 'rgba(10,4,20,0.45)'; g.lineWidth = 0.9; g.beginPath(); const cx = 6 + r() * 20; g.moveTo(cx, 2); g.lineTo(cx + 3, 12 + r() * 6); g.lineTo(cx - 1, 28); g.stroke(); }
+        return;
+      }
       g.fillStyle = darker(pal.mortar.length === 7 ? pal.mortar : '#3c2140', 0.8); g.fillRect(0, 0, T, T);
       // two or three big slabs
       const slabs = [[0, 0, 18 + r() * 8, 15 + r() * 6], [0, 0, 0, 0]];
@@ -430,7 +763,13 @@ function buildSprites(pal, wallKind, themeName) {
       }
     }));
   }
-  return { stone, top, rock, plank, emitter, gate, shadeDown: shade('down'), shadeL: shade('left'), shadeR: shade('right'), hang, walls, details };
+  return {
+    stone, top, rock, plank, emitter, gate, shadeDown: shade('down'), shadeL: shade('left'), shadeR: shade('right'), hang, walls, details,
+    struts, plankEndL: plankEnd(1), plankEndR: plankEnd(-1),
+    beam, beamEndL: beamEnd(1), beamEndR: beamEnd(-1), splinterL: splinters(1), splinterR: splinters(-1), post, postTop,
+    wearL: side(1), wearR: side(-1), under, crack, stain, aoL: ao(1), aoR: ao(-1),
+    piers, skirt,
+  };
 }
 
 // ------------------------------------------------------------ per-world static analysis (cached)
@@ -472,6 +811,30 @@ function analyse(world, theme) {
       if (covered[i] && (covered[i - 1] || solid(tx - 1, ty)) && (covered[i + 1] || solid(tx + 1, ty))) interior[i] = 1;
     }
   }
+  // material per stone cell: dressed set pieces (set-pieces.js), then timber. A thin
+  // slab (open below, or resting on a lone post) is a beam; a lone column standing
+  // free of the ceiling is a post. The castle stays all stone.
+  const mat = new Uint8Array(w * h);
+  const isStone = (tx, ty) => tx >= 0 && ty >= 0 && tx < w && ty < h && world.grid[ty * w + tx] === STONE;
+  const lone = (tx, ty) => isStone(tx, ty) && !solid(tx - 1, ty) && !solid(tx + 1, ty);
+  for (let i = 0; i < w * h; i++) if (world.grid[i] === STONE && pieceAt(world, i)) mat[i] = MAT_PIECE;
+  if (theme.name !== 'castle') {
+    for (let ty = 1; ty < h - 1; ty++) for (let tx = 1; tx < w - 1; tx++) {
+      const i = ty * w + tx;
+      if (mat[i] || !isStone(tx, ty)) continue;
+      const above = world.grid[i - w];
+      if ((!stoneLike(above) || mat[i - w] === MAT_PIECE) && (!solid(tx, ty + 1) || lone(tx, ty + 1) || mat[i + w] === MAT_PIECE)) mat[i] = MAT_BEAM;
+    }
+    for (let tx = 1; tx < w - 1; tx++) for (let ty = 1; ty < h - 1; ty++) {
+      if (!lone(tx, ty) || mat[ty * w + tx]) continue;
+      let e = ty;
+      while (e + 1 < h - 1 && lone(tx, e + 1) && !mat[(e + 1) * w + tx]) e++;
+      const above = world.grid[(ty - 1) * w + tx], below = world.grid[(e + 1) * w + tx];
+      const topOk = !stoneLike(above) || mat[(ty - 1) * w + tx] === MAT_BEAM;
+      if (topOk && e - ty < 6 && below !== DOOR && below !== GATE) for (let k = ty; k <= e; k++) mat[k * w + tx] = MAT_POST;
+      ty = e;
+    }
+  }
   // small decorations on walkable surfaces, vines on cliff faces, lanterns under ceilings
   const busy = new Set();
   const mark = (x, y) => busy.add(Math.floor(y / T - 0.5) * w + Math.floor(x / T));
@@ -483,7 +846,7 @@ function analyse(world, theme) {
   const kinds = DECO[theme.name] || DECO.dusk;
   const deco = [], vines = [], lanterns = [];
   for (let ty = 1; ty < h - 1; ty++) for (let tx = 1; tx < w - 1; tx++) {
-    if (!solid(tx, ty) || world.grid[ty * w + tx] !== STONE) continue;
+    if (!solid(tx, ty) || world.grid[ty * w + tx] !== STONE || mat[ty * w + tx]) continue;
     const hv = hash(tx, ty);
     const openAbove = !solid(tx, ty - 1) && world.grid[(ty - 1) * w + tx] === 0;
     if (openAbove && !busy.has((ty - 1) * w + tx) && hv % 100 < 26) {
@@ -499,7 +862,7 @@ function analyse(world, theme) {
       lanterns.push({ x: tx * T + T / 2, y: (ty + 1) * T, len: 10 + (hv % 14), v: hv });
     }
   }
-  c = { depth, interior, deco, vines, lanterns };
+  c = { depth, interior, mat, deco, vines, lanterns };
   worldCache.set(world, c);
   return c;
 }
@@ -519,7 +882,7 @@ function houseStrip(height, col, roofCol, factor, seed, windowChance) {
   const g = c.getContext('2d');
   g.translate(0, 60);
   const r = rng(seed * 977);
-  const chimneys = [];
+  const chimneys = [], lights = [];
   let x = 0;
   while (x < STRIP_W) {
     const w = 70 + r() * 110;
@@ -540,13 +903,13 @@ function houseStrip(height, col, roofCol, factor, seed, windowChance) {
           const lit = r() < 0.55;
           g.fillStyle = lit ? (r() < 0.5 ? '#ffb24a' : '#f08a38') : 'rgba(20,8,30,0.5)';
           g.fillRect(wx, wy, 9, 12);
-          if (lit) { g.fillStyle = 'rgba(255,190,90,0.18)'; g.fillRect(wx - 4, wy - 4, 17, 20); }
+          if (lit) { g.fillStyle = 'rgba(255,190,90,0.18)'; g.fillRect(wx - 4, wy - 4, 17, 20); if (r() < 0.3) lights.push(wx, wy + 60, r() * 100); }
         }
       }
     }
     x += w + r() * 14;
   }
-  return { canvas: c, factor, height: height + 60, chimneys };
+  return { canvas: c, factor, height: height + 60, chimneys, lights };
 }
 
 // ------------------------------------------------------------ sky + background
@@ -594,6 +957,7 @@ export function drawBackground(ctx, cam, world, time) {
   }
   if (th.clouds) drawClouds(ctx, cam, th, time, lift);
   drawThemeSky(ctx, cam, world, time, th, lift);
+  drawSkyLife(ctx, th, time, lift);
 
   const baseY = H * 0.86 + lift * 0.08;
   drawCastle(ctx, W * 0.72 - (cam.x * 0.04) % 400, baseY, time, world);
@@ -604,6 +968,16 @@ export function drawBackground(ctx, cam, world, time) {
     ctx.drawImage(L.canvas, ox, y);
     ctx.drawImage(L.canvas, ox + STRIP_W, y);
     if (i === 1) {
+      // someone in the town turns in for the night, someone else lights a lamp
+      ctx.fillStyle = 'rgba(30,14,44,0.82)';
+      for (const base of [ox, ox + STRIP_W]) {
+        for (let k = 0; k < L.lights.length; k += 3) {
+          const wx = base + L.lights[k];
+          if (wx < -10 || wx > W + 10) continue;
+          const ph = L.lights[k + 2];
+          if (Math.sin(time * 0.11 + ph) * Math.sin(time * 0.037 + ph * 3) > 0.42) ctx.fillRect(wx, y + L.lights[k + 1], 9, 12);
+        }
+      }
       // lazy chimney smoke curling up from the town
       for (const ch of L.chimneys) {
         for (const base of [ox, ox + STRIP_W]) {
@@ -668,6 +1042,45 @@ function drawClouds(ctx, cam, th, time, lift) {
     ctx.fill();
   }
   ctx.globalAlpha = 1;
+}
+
+// Now and then a skein of birds crosses the dusk, or bats flit over the night
+// themes: two flocks on a slow clock, off screen most of the time.
+const FLYERS = {
+  dusk: 'bird', harvest: 'bird', wind: 'bird', fair: 'bird', canal: 'bird', locks: 'bird',
+  violet: 'bat', tower: 'bat', castle: 'bat', barn: 'bat',
+};
+function drawSkyLife(ctx, th, time, lift) {
+  const kind = FLYERS[th.name];
+  if (!kind) return;
+  const W = CFG.VIEW_W, bat = kind === 'bat', period = bat ? 17 : 23;
+  ctx.save();
+  ctx.strokeStyle = 'rgba(28,13,42,0.6)'; ctx.fillStyle = 'rgba(28,13,42,0.6)';
+  ctx.lineWidth = 1.6; ctx.lineCap = 'round';
+  for (let f = 0; f < 2; f++) {
+    const u = ((time + 6 + f * period * 0.5) / period) % 1;
+    if (u > 0.5) continue;
+    const k = u / 0.5, dir = f ? -1 : 1;
+    const x0 = dir > 0 ? -90 + k * (W + 180) : W + 90 - k * (W + 180);
+    const y0 = 64 + f * 54 + Math.sin(k * 3 + f) * 18 + lift * 0.03;
+    const n = bat ? 3 : 5;
+    for (let i = 0; i < n; i++) {
+      const side = i % 2 ? 1 : -1, rank = Math.ceil(i / 2);
+      let x = x0 - dir * rank * 15, y = y0 + rank * 8 * side * (bat ? 0.5 : 1) + (bat ? 0 : rank * 3);
+      if (bat) { x += Math.sin(time * 5 + i * 2) * 9; y += Math.cos(time * 7.5 + i * 3) * 7; }
+      const fl = Math.sin(time * (bat ? 16 : 8) + i * 1.7);
+      const s = bat ? 4.5 : 6;
+      ctx.beginPath();
+      if (bat) {
+        ctx.moveTo(x - s, y - fl * 2.5); ctx.quadraticCurveTo(x - s * 0.5, y + 1.5, x, y); ctx.quadraticCurveTo(x + s * 0.5, y + 1.5, x + s, y - fl * 2.5);
+        ctx.stroke(); ctx.beginPath(); ctx.arc(x, y, 1.3, 0, 6.283); ctx.fill();
+      } else {
+        ctx.moveTo(x - s, y - 2 - fl * 3); ctx.quadraticCurveTo(x - s * 0.4, y - 1, x, y); ctx.quadraticCurveTo(x + s * 0.4, y - 1, x + s, y - 2 - fl * 3);
+        ctx.stroke();
+      }
+    }
+  }
+  ctx.restore();
 }
 
 // Rain streaks in screen space. With a world and camera, a streak only falls in
@@ -789,7 +1202,7 @@ let windowGlows = [], windowTheme = '';
 
 export function drawTiles(ctx, cam, world, lights) {
   const th = themeOf(world);
-  const sp = spritesFor(th);
+  const sp = spritesFor(th, world);
   const info = analyse(world, th);
   const x0 = Math.max(0, Math.floor(cam.x / T)), x1 = Math.min(world.w - 1, Math.floor((cam.x + cam.w) / T));
   const y0 = Math.max(0, Math.floor(cam.y / T)), y1 = Math.min(world.h - 1, Math.floor((cam.y + cam.h) / T));
@@ -804,29 +1217,118 @@ export function drawTiles(ctx, cam, world, lights) {
   };
   windowGlows = [];
   windowTheme = th.name;
-  const W = world.w;
-  const wallPath = sp.walls && th.name === 'rain' && world.data.scene ? new Path2D() : null;
+  // the storm mill paints a turning motif between its walls and its stone, so it is
+  // drawn live; every other level keeps its static cells in cached chunks
+  const motif = sp.walls && th.name === 'rain' && world.data.scene;
+  if (motif) {
+    paintCells(ctx, world, th, sp, info, x0, x1, y0, y1, (tx, ty) => !world.isDark(tx, ty) || lit(tx, ty), windowGlows, cam);
+  } else {
+    drawChunks(ctx, cam, world, th, sp, info);
+    // dark-zone cells only show where a light reaches them, so they stay live
+    if (darkIn(world, x0, x1, y0, y1)) paintCells(ctx, world, th, sp, info, x0, x1, y0, y1, (tx, ty) => world.isDark(tx, ty) && lit(tx, ty), windowGlows, null);
+  }
+  drawPieceFx(ctx, cam, world, frameTime);
+}
 
+// any dark-zone cell in a range
+function darkIn(world, x0, x1, y0, y1) {
+  for (let ty = y0; ty <= y1; ty++) for (let tx = x0; tx <= x1; tx++) if (world.isDark(tx, ty)) return true;
+  return false;
+}
+
+// ------------------------------------------------------------ chunk cache
+// The tile layer is static apart from dark zones and burning gates, so it is
+// painted once per 16x8-tile chunk into an offscreen canvas at the screen's
+// resolution (at most 2x, the sprites' own) and blitted. A chunk repaints when a
+// gate inside it burns away. At most CHUNK_MAX chunks are kept, oldest out first.
+const CW = 16, CH = 8, CHUNK_MAX = 12;
+const chunkCache = { world: null, res: 0, map: new Map(), tick: 0 };
+function drawChunks(ctx, cam, world, th, sp, info) {
+  const res = Math.min(2, Math.max(1, Math.round(ctx.getTransform().a * 2) / 2));
+  const C = chunkCache, q = Post.quality;
+  if (C.world !== world || C.res !== res || C.q !== q) { C.world = world; C.res = res; C.q = q; C.map.clear(); }
+  C.tick++;
+  const cx0 = Math.floor(cam.x / (CW * T)), cx1 = Math.floor((cam.x + cam.w) / (CW * T));
+  const cy0 = Math.floor(cam.y / (CH * T)), cy1 = Math.floor((cam.y + cam.h) / (CH * T));
+  for (let cy = cy0; cy <= cy1; cy++) for (let cx = cx0; cx <= cx1; cx++) {
+    if (cx < 0 || cy < 0 || cx * CW >= world.w || cy * CH >= world.h) continue;
+    const key = cy * 4096 + cx;
+    let ch = C.map.get(key);
+    if (ch && ch.gates.some((g) => world.grid[g[0]] !== g[1])) ch = null;
+    if (!ch) {
+      ch = buildChunk(world, th, sp, info, cx, cy, res, C.map.get(key));
+      C.map.set(key, ch);
+      if (C.map.size > CHUNK_MAX) {
+        let old = null;
+        for (const [k, c] of C.map) if (k !== key && (!old || c.tick < old[1].tick)) old = [k, c];
+        if (old) C.map.delete(old[0]);
+      }
+    }
+    ch.tick = C.tick;
+    ctx.drawImage(ch.canvas, cx * CW * T, cy * CH * T, CW * T, CH * T);
+    for (const w of ch.windows) windowGlows.push(w);
+  }
+}
+
+function buildChunk(world, th, sp, info, cx, cy, res, reuse) {
+  const c = reuse ? reuse.canvas : canvas(CW * T * res, CH * T * res);
+  const g = c.getContext('2d');
+  g.setTransform(1, 0, 0, 1, 0, 0);
+  g.clearRect(0, 0, c.width, c.height);
+  g.setTransform(res, 0, 0, res, -cx * CW * T * res, -cy * CH * T * res);
+  const tx0 = cx * CW, ty0 = cy * CH;
+  const wins = [];
+  // paint one cell beyond the chunk on every side, so outlines, fringe and splinters
+  // that cross a chunk edge match their neighbour exactly
+  paintCells(g, world, th, sp, info, Math.max(0, tx0 - 1), Math.min(world.w - 1, tx0 + CW), Math.max(0, ty0 - 1), Math.min(world.h - 1, ty0 + CH),
+    (tx, ty) => !world.isDark(tx, ty), wins, { x: tx0 * T, y: ty0 * T, w: CW * T, h: CH * T });
+  const windows = [];
+  for (let i = 0; i < wins.length; i += 3) {
+    const wx = Math.floor(wins[i] / T), wy = Math.floor(wins[i + 1] / T);
+    if (wx >= tx0 && wx < tx0 + CW && wy >= ty0 && wy < ty0 + CH) windows.push(wins[i], wins[i + 1], wins[i + 2]);
+  }
+  const gates = [];
+  for (let ty = Math.max(0, ty0 - 2); ty <= Math.min(world.h - 1, ty0 + CH + 1); ty++) {
+    for (let tx = Math.max(0, tx0 - 2); tx <= Math.min(world.w - 1, tx0 + CW + 1); tx++) {
+      const i = ty * world.w + tx;
+      if (world.flammables.has(i) && world.flammables.get(i).type === 'gate') gates.push([i, world.grid[i]]);
+    }
+  }
+  return { canvas: c, windows, gates, tick: 0 };
+}
+
+// Paint the tiles of a cell range: pass 1 (back walls, shadows, hangings in open
+// cells), set-piece backdrops, pass 2 (solid tiles, outlines, volume shading,
+// fringe). `keep(tx, ty)` picks the cells; lit windows are pushed onto `wins`.
+// `area` (world rect) is where set-piece backdrops are drawn, or null for none.
+function paintCells(ctx, world, th, sp, info, x0, x1, y0, y1, keep, wins, area) {
+  const W = world.w;
+  const detail = Post.quality >= 1;          // wear decals and contact shadows: skipped on slow devices
+  const broken = th.name === 'tower' || th.name === 'barn';
+  const wallPath = sp.walls && th.name === 'rain' && world.data.scene ? new Path2D() : null;
   // pass 1: back walls, shadows and hanging things in open cells
   for (let ty = y0; ty <= y1; ty++) {
     for (let tx = x0; tx <= x1; tx++) {
       const k = world.cell(tx, ty);
       if (stoneLike(k) || k === GATE) continue;
-      const dark = world.isDark(tx, ty) && !lit(tx, ty);
-      if (dark) continue;
+      if (!keep(tx, ty)) continue;
       const px = tx * T, py = ty * T, i = ty * W + tx, hv = hash(tx, ty);
       if (sp.walls && info.interior[i]) {
-        ctx.drawImage(sp.walls[hv % 3], px, py, T, T);
+        ctx.drawImage(sp.walls[hv % 7 === 5 ? 3 : hv % 7 === 6 ? 4 : hv % 3], px, py, T, T);
         if (wallPath) wallPath.rect(px, py, T, T);
-        if (hv % (th.backwall === 'castle' ? 89 : 43) === 0 && th.backwall !== 'barn' && !stoneLike(world.cell(tx, ty + 1))) {
+        const pier = detail && ((tx % 13) + 13) % 13 === 6;
+        if (pier) {
+          ctx.drawImage(stoneLike(world.cell(tx, ty - 1)) ? sp.piers.cap : stoneLike(world.cell(tx, ty + 1)) ? sp.piers.base : sp.piers.mid, px, py, T, T);
+        } else if (hv % (th.backwall === 'castle' ? 89 : 43) === 0 && th.backwall !== 'barn' && !stoneLike(world.cell(tx, ty + 1))) {
           // about a third of the windows are dark, so a wall is not a polka-dot grid
           const on = (hv >> 2) % 10 >= 3;
           const d = sp.details;
           ctx.drawImage(th.backwall === 'castle' ? (on ? d.stained : d.stainedDark) : (on ? d.window : d.windowDark), px, py, T, T);
-          if (on) windowGlows.push(px + T / 2, py + 17, hv);
+          if (on) wins.push(px + T / 2, py + 17, hv);
         } else if (hv % 37 === 1) {
           ctx.drawImage(th.backwall === 'castle' ? sp.details.banner : sp.details.beam, px, py, T, T);
         }
+        if (detail && stoneLike(world.cell(tx, ty + 1))) ctx.drawImage(sp.skirt, px, py, T, T);
         if (stoneLike(world.cell(tx - 1, ty))) ctx.drawImage(sp.shadeL, px, py, T, T);
         if (stoneLike(world.cell(tx + 1, ty))) ctx.drawImage(sp.shadeR, px, py, T, T);
       }
@@ -834,38 +1336,70 @@ export function drawTiles(ctx, cam, world, lights) {
         ctx.drawImage(sp.shadeDown, px, py, T, T);
         if (hv % 5 < 2) ctx.drawImage(sp.hang[hv % 3], px, py, T, T);
       }
+      // contact shadow where the floor meets a wall
+      if (detail && stoneLike(world.cell(tx, ty + 1))) {
+        if (stoneLike(world.cell(tx - 1, ty))) ctx.drawImage(sp.aoL, px, py, T, T);
+        if (stoneLike(world.cell(tx + 1, ty))) ctx.drawImage(sp.aoR, px, py, T, T);
+      }
     }
   }
+  // set-piece backdrops (the press frame, a hull in the dry dock), behind the stone
+  if (area) drawPieceBacks(ctx, area, world, (tx, ty) => !keep(tx, ty));
 
   // level motif painted on the back walls (behind the stone)
   if (wallPath) {
     ctx.save(); ctx.clip(wallPath);
-    drawWallMotif(ctx, cam, world, th, frameTime);
+    drawWallMotif(ctx, area, world, th, frameTime);
     ctx.restore();
   }
 
   // pass 2: solid tiles, outlines, volume shading
   const edges = new Path2D();
   const deep = [new Path2D(), new Path2D(), new Path2D()];
-  const fringe = [];
+  const fringe = [], ends = [];
   for (let ty = y0; ty <= y1; ty++) {
     for (let tx = x0; tx <= x1; tx++) {
       const k = world.cell(tx, ty);
       if (k === 0 || k === BLOB || k === COBWEB || k === DOOR) continue;
-      if (world.isDark(tx, ty) && !lit(tx, ty)) continue;
+      if (!keep(tx, ty)) continue;
       const px = tx * T, py = ty * T;
       const v = ((tx * 7 + ty * 13) & 3);
       if (k === STONE) {
         const open = !stoneLike(world.cell(tx, ty - 1)) && world.cell(tx, ty - 1) !== GATE;
-        const d = info.depth[ty * W + tx];
+        const i = ty * W + tx, m = info.mat[i];
         const hv2 = hash(tx, ty);
-        ctx.drawImage(open ? sp.top[v] : d >= 2 ? sp.rock[hv2 % 13 === 0 ? 4 : hv2 % 31 === 0 ? 5 : hv2 & 3] : sp.stone[v], px, py, T, T);
-        if (open) fringe.push(px, py, hv2);
-        if (d >= 2) deep[Math.min(2, d - 2)].rect(px, py, T, T);
+        if (m === MAT_PIECE) drawPieceCell(ctx, pieceAt(world, i), tx, ty);
+        else if (m === MAT_BEAM) {
+          ctx.drawImage(sp.beam[v], px, py, T, T);
+          if (!stoneLike(world.cell(tx - 1, ty))) { if (broken) ends.push(sp.splinterL, px - 6, py); else ctx.drawImage(sp.beamEndL, px, py, T, T); }
+          if (!stoneLike(world.cell(tx + 1, ty))) { if (broken) ends.push(sp.splinterR, px + T - 6, py); else ctx.drawImage(sp.beamEndR, px, py, T, T); }
+          if (open && th.snow) fringe.push(px, py, hv2);
+        } else if (m === MAT_POST) {
+          ctx.drawImage(sp.post[hv2 & 1], px, py, T, T);
+          if (open) ctx.drawImage(sp.postTop, px, py, T, T);
+        } else {
+          const d = info.depth[i];
+          ctx.drawImage(open ? sp.top[v] : d >= 2 ? sp.rock[hv2 % 13 === 0 ? 4 : hv2 % 31 === 0 ? 5 : hv2 & 3] : sp.stone[v], px, py, T, T);
+          if (open) fringe.push(px, py, hv2);
+          if (d >= 2) deep[Math.min(2, d - 2)].rect(px, py, T, T);
+          if (detail) {
+            // exposed faces wear: chipped, darker sides, a stained lip underneath, cracks
+            const L = !stoneLike(world.cell(tx - 1, ty)), R = !stoneLike(world.cell(tx + 1, ty)), B = !stoneLike(world.cell(tx, ty + 1));
+            if (L) ctx.drawImage(sp.wearL, px, py, T, T);
+            if (R) ctx.drawImage(sp.wearR, px, py, T, T);
+            if (B) ctx.drawImage(sp.under, px, py, T, T);
+            if (hv2 % 11 === 3) ctx.drawImage(sp.crack[hv2 % 3], px, py, T, T);
+            if (sp.stain.length && (L || R || B) && hv2 % 4 === 1) ctx.drawImage(sp.stain[(hv2 >> 2) & 1], px, py, T, T);
+          }
+        }
       } else if (k === EMITTER) {
         ctx.drawImage(sp.emitter, px, py, T, T);
       } else if (k === ONEWAY) {
-        ctx.drawImage(sp.plank, px, py, T, T);
+        const hv3 = hash(tx, ty), L = world.cell(tx - 1, ty) !== ONEWAY, R = world.cell(tx + 1, ty) !== ONEWAY;
+        ctx.drawImage(sp.plank[hv3 % 3], px, py, T, T);
+        if (L || R || !(tx & 1)) ctx.drawImage(sp.struts, px, py, T, T);
+        if (L) ctx.drawImage(sp.plankEndL, px, py, T, T);
+        if (R) ctx.drawImage(sp.plankEndR, px, py, T, T);
         continue;
       } else if (k === GATE) {
         ctx.drawImage(sp.gate, px, py, T, T);
@@ -884,6 +1418,8 @@ export function drawTiles(ctx, cam, world, lights) {
   ctx.lineWidth = 3;
   ctx.lineCap = 'round';
   ctx.stroke(edges);
+  // splintered board ends over holes in timber floors
+  for (let i = 0; i < ends.length; i += 3) ctx.drawImage(ends[i], ends[i + 1], ends[i + 2], 12, T);
 
   // organic lip over ledge tops: leaves, moss or snow drooping past the edge
   const fr = FRINGE[(STONES[th.stone] || STONES.plum).top];
@@ -957,13 +1493,25 @@ export function drawTileGlows(ctx) {
   if (blobGlows.length) drawBlobGlows(ctx);
   if (!windowGlows.length) return;
   const spr = windowGlowSprite(windowTheme);
+  const t = frameTime, still = Settings.get().reduceFlash, motes = Post.quality >= 1;
+  const warm = !WINDOW_LIGHT[windowTheme];
   ctx.save();
   ctx.globalCompositeOperation = 'screen';
   for (let i = 0; i < windowGlows.length; i += 3) {
     const x = windowGlows[i], y = windowGlows[i + 1], hv = windowGlows[i + 2];
     const k = 0.7 + 0.6 * (((hv >> 3) % 8) / 7);
-    ctx.globalAlpha = 0.5 + 0.5 * (((hv >> 1) % 5) / 4);
+    // lamplit windows flicker a touch; moonlit ones hold steady
+    const fl = warm && !still ? 1 - 0.08 * (0.5 + 0.5 * Math.sin(t * 7.3 + hv)) * (0.5 + 0.5 * Math.sin(t * 2.3 + hv * 0.7)) : 1;
+    ctx.globalAlpha = (0.5 + 0.5 * (((hv >> 1) % 5) / 4)) * fl;
     ctx.drawImage(spr, x - 48 * k, y - 30 * k, 96 * k, 150 * k);
+    if (!motes) continue;
+    // dust motes turning slowly in the spill of light
+    ctx.fillStyle = warm ? 'rgb(255,224,170)' : 'rgb(210,220,255)';
+    for (let m = 0; m < 4; m++) {
+      const u = (t * (0.035 + m * 0.008) + m * 0.27 + (hv % 17) / 17) % 1;
+      ctx.globalAlpha = 0.55 * Math.sin(u * Math.PI);
+      ctx.fillRect(x + Math.sin(t * 0.5 + m * 2.4 + hv) * 14 * k, y + 8 + u * 80 * k, 1.5, 1.5);
+    }
   }
   ctx.restore();
 }
@@ -1060,11 +1608,27 @@ function roundRectTop(g, x, y, w, h, r) {
   g.closePath();
 }
 // ------------------------------------------------------------ props
+// A soft contact shadow where something stands on the ground, so props sit on the
+// floor instead of floating in front of it.
+let contactSprite = null;
+function contact(ctx, x, y, rx) {
+  if (!contactSprite) {
+    contactSprite = canvas(64, 64);
+    const g = contactSprite.getContext('2d');
+    const r = g.createRadialGradient(32, 32, 0, 32, 32, 32);
+    r.addColorStop(0, 'rgba(12,4,22,0.6)'); r.addColorStop(0.55, 'rgba(12,4,22,0.28)'); r.addColorStop(1, 'rgba(12,4,22,0)');
+    g.fillStyle = r; g.fillRect(0, 0, 64, 64);
+  }
+  ctx.drawImage(contactSprite, x - rx, y - rx * 0.24, rx * 2, rx * 0.48);
+}
+const PROP_FOOT = { hay: 23, barrel: 15, crate: 17, lamp: 7, banner: 6 };
+
 export function drawProps(ctx, cam, world, time) {
   for (const p of world.props) {
     if (p.x < cam.x - 80 || p.x > cam.x + cam.w + 80) continue;
     if (world.isDark(p.tx, p.ty)) continue;
     const x = p.x, y = p.y;
+    if (PROP_FOOT[p.kind]) contact(ctx, x, y, PROP_FOOT[p.kind]);
     ctx.strokeStyle = OUT; ctx.lineWidth = 2;
     switch (p.kind) {
       case 'hay': {
@@ -1143,6 +1707,7 @@ export function drawEntities(ctx, cam, world, time) {
 
 function drawTorch(ctx, e, time) {
   const x = e.x, y = e.y;
+  contact(ctx, x, y, 11);
   ctx.strokeStyle = OUT; ctx.lineWidth = 2;
   ctx.fillStyle = '#5a3424';
   ctx.fillRect(x - 3, y - 50, 6, 50); ctx.strokeRect(x - 3, y - 50, 6, 50);
@@ -1164,6 +1729,7 @@ function drawPumpkin(ctx, e, time) {
   const x = e.x, y = e.y;
   const bounce = e.taken ? 0 : Math.abs(Math.sin(time * 2.5 + x)) * 1.5;
   const cy = y - 12 - bounce;
+  contact(ctx, x, y, 15 - bounce * 2);
   ctx.strokeStyle = OUT; ctx.lineWidth = 2;
   ctx.fillStyle = '#5a6a2a';
   ctx.fillRect(x - 2, cy - 15, 4, 6);
@@ -1262,6 +1828,7 @@ function drawKeepsakeGlows(ctx, cam, world, time) {
 
 function drawGoal(ctx, e, time) {
   const x = e.x, y = e.y;
+  contact(ctx, x, y, 30);
   ctx.strokeStyle = OUT; ctx.lineWidth = 2.5;
   ctx.fillStyle = '#6a4a5c';
   ctx.fillRect(x - 16, y - 60, 32, 60); ctx.strokeRect(x - 16, y - 60, 32, 60);
@@ -1287,6 +1854,7 @@ function drawGoal(ctx, e, time) {
 // column, a wide bowl and two swallowtail banners; five flames once lit.
 function drawGreatTorch(ctx, e, time) {
   const x = e.x, y = e.y;
+  contact(ctx, x, y, 58);
   ctx.save();
   ctx.strokeStyle = OUT; ctx.lineWidth = 2.5; ctx.lineJoin = 'round';
   // stepped plinth with gold trim
@@ -1703,6 +2271,7 @@ export function drawSignPosts(ctx, cam, world) {
   for (const s of world.signs) {
     if (s.px < cam.x - 60 || s.px > cam.x + cam.w + 60) continue;
     const x = s.px, y = s.py;
+    contact(ctx, x, y, 8);
     ctx.strokeStyle = OUT; ctx.lineWidth = 2;
     ctx.fillStyle = '#5a3424'; ctx.fillRect(x - 2, y - 30, 4, 30);
     ctx.fillStyle = '#9a6038';
