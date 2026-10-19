@@ -19,8 +19,11 @@
     -webkit-touch-callout: none; overscroll-behavior: none;
     -webkit-tap-highlight-color: transparent;
   }
-  /* the canvas is centred inside the safe area, clear of the notch and home bar */
+  /* the canvas is centred inside the safe area, clear of the notch and home bar.
+     The bars around it (pillarbox on wide phones) carry the current level's sky, set from main.js. */
   body {
+    --sky-a: #1e1040; --sky-b: #3a1a4e; --sky-c: #120a24;
+    background: linear-gradient(180deg, var(--sky-a) 0%, var(--sky-b) 52%, var(--sky-c) 100%) #0c0618;
     display: flex; align-items: center; justify-content: center; position: fixed; inset: 0;
     box-sizing: border-box;
     padding: env(safe-area-inset-top, 0px) env(safe-area-inset-right, 0px) env(safe-area-inset-bottom, 0px) env(safe-area-inset-left, 0px);
@@ -32,36 +35,43 @@
   }
   noscript { color: #fbe9c8; font: 16px sans-serif; }
 
-  /* touch controls: translucent amber circles, safe-area aware.
+  /* touch controls: outline-led rings over a dark translucent fill, warming only while pressed,
+     so they never compete with the torches and the goal. Safe-area aware.
      Size, opacity and handedness come from Options: --tc-s scales the buttons,
      --tc-op / --tc-op-down set their idle and pressed opacity, .swap mirrors the layout. */
   #touch {
     position: fixed; inset: 0; pointer-events: none; display: none; z-index: 5;
-    --tc-s: 1; --tc-op: 0.35; --tc-op-down: 0.7;
+    --tc-s: 1; --tc-op: 0.6; --tc-op-down: 0.9;
     --sl: env(safe-area-inset-left, 0px); --sr: env(safe-area-inset-right, 0px); --sb: env(safe-area-inset-bottom, 0px);
   }
   #touch.on { display: block; }
   #touch.size-small { --tc-s: 0.8; }
   #touch.size-large { --tc-s: 1.25; }
-  #touch.op-faint { --tc-op: 0.18; --tc-op-down: 0.5; }
-  #touch.op-solid { --tc-op: 0.62; --tc-op-down: 0.88; }
+  #touch.op-faint { --tc-op: 0.35; --tc-op-down: 0.7; }
+  #touch.op-solid { --tc-op: 0.85; --tc-op-down: 1; }
   /* options preview: shown over the menu but never pressed */
   #touch.preview .tc, #touch.preview #tc-zone { pointer-events: none; }
   .tc {
     position: absolute; pointer-events: auto; touch-action: none;
     -webkit-user-select: none; user-select: none; -webkit-touch-callout: none;
     display: flex; align-items: center; justify-content: center;
-    color: #2a1630; font: 800 calc(15px * var(--tc-s)) "Trebuchet MS", Verdana, sans-serif; letter-spacing: 0.5px;
+    color: #fbe9c8; font: 800 calc(15px * var(--tc-s)) "Trebuchet MS", Verdana, sans-serif; letter-spacing: 0.5px;
     box-sizing: border-box;
   }
   .tc.round, .tc .half {
     border-radius: 50%;
-    background: radial-gradient(circle at 40% 35%, rgba(255, 214, 140, 0.95), rgba(232, 128, 48, 0.85));
-    border: 3px solid rgba(255, 236, 190, 0.9);
-    box-shadow: 0 0 18px rgba(255, 150, 60, 0.6);
-    opacity: var(--tc-op); transition: opacity 60ms;
+    background: rgba(20, 10, 36, 0.38);
+    border: 2.5px solid rgba(255, 230, 186, 0.8);
+    box-shadow: 0 0 0 1.5px rgba(20, 10, 36, 0.45), inset 0 0 0 1.5px rgba(20, 10, 36, 0.35);
+    text-shadow: 0 1px 2px rgba(20, 10, 36, 0.9);
+    opacity: var(--tc-op); transition: opacity 60ms, background 60ms;
   }
-  .tc.down, .tc .half.down { opacity: var(--tc-op-down); }
+  .tc.down, .tc .half.down {
+    opacity: var(--tc-op-down); color: #2a1630; text-shadow: none;
+    background: radial-gradient(circle at 40% 35%, rgba(255, 214, 140, 0.95), rgba(232, 128, 48, 0.85));
+    border-color: rgba(255, 236, 190, 0.95);
+    box-shadow: 0 0 18px rgba(255, 150, 60, 0.6);
+  }
   .tc.off { filter: grayscale(1) brightness(0.7); }
   /* floating thumb pad: touch anywhere in the lower left, the pad appears under the thumb */
   #tc-zone {
@@ -74,20 +84,24 @@
   }
   #tc-ring {
     position: absolute; left: -64px; top: -64px; width: 128px; height: 128px; border-radius: 50%;
-    box-sizing: border-box; border: 3px solid rgba(255, 226, 170, 0.75);
-    background: radial-gradient(circle, rgba(255, 170, 80, 0.10) 0%, rgba(255, 150, 60, 0.28) 70%, rgba(255, 190, 110, 0.4) 100%);
-    box-shadow: 0 0 22px rgba(255, 150, 60, 0.45), inset 0 0 18px rgba(255, 150, 60, 0.35);
+    box-sizing: border-box; border: 2.5px solid rgba(255, 226, 170, 0.7);
+    background: rgba(20, 10, 36, 0.3);
+    box-shadow: 0 0 0 1.5px rgba(20, 10, 36, 0.4);
     opacity: var(--tc-op); transition: opacity 80ms;
   }
   #tc-knob {
     position: absolute; left: -30px; top: -30px; width: 60px; height: 60px; border-radius: 50%;
-    background: radial-gradient(circle at 38% 32%, #fff2c8, #ffb24a 55%, #d8682a);
-    border: 3px solid rgba(255, 240, 200, 0.95); box-shadow: 0 0 16px rgba(255, 160, 70, 0.8);
-    opacity: calc(var(--tc-op) + 0.15); transition: transform 90ms ease-out, opacity 80ms;
+    background: rgba(20, 10, 36, 0.45);
+    border: 2.5px solid rgba(255, 236, 196, 0.85); box-shadow: 0 0 0 1.5px rgba(20, 10, 36, 0.45);
+    opacity: var(--tc-op); transition: transform 90ms ease-out, opacity 80ms;
   }
-  #tc-pad.down #tc-ring { opacity: calc(var(--tc-op-down) + 0.05); }
-  #tc-pad.down #tc-knob { opacity: 0.9; transition: opacity 80ms; }
-  #tc-pad .arrow { position: absolute; top: -11px; font-size: 18px; color: rgba(255, 230, 180, 0.6); }
+  #tc-pad.down #tc-ring { opacity: var(--tc-op-down); border-color: rgba(255, 214, 150, 0.85); }
+  #tc-pad.down #tc-knob {
+    opacity: var(--tc-op-down); transition: opacity 80ms;
+    background: radial-gradient(circle at 38% 32%, #fff2c8, #ffb24a 55%, #d8682a);
+    border-color: rgba(255, 240, 200, 0.95); box-shadow: 0 0 16px rgba(255, 160, 70, 0.8);
+  }
+  #tc-pad .arrow { position: absolute; top: -11px; font-size: 18px; color: rgba(255, 230, 180, 0.6); text-shadow: 0 1px 2px rgba(20, 10, 36, 0.9); }
   #tc-pad .arrow.l { left: -56px; } #tc-pad .arrow.r { left: 40px; }
   #tc-jump { width: calc(100px * var(--tc-s)); height: calc(100px * var(--tc-s)); right: calc(var(--sr) + 18px); bottom: calc(var(--sb) + 18px); font-size: calc(17px * var(--tc-s)); }
   #tc-drip { width: calc(84px * var(--tc-s)); height: calc(84px * var(--tc-s)); right: calc(var(--sr) + 18px + 112px * var(--tc-s)); bottom: calc(var(--sb) + 18px + 8px * var(--tc-s)); }

@@ -5,6 +5,8 @@
 import { CFG, clamp } from '../config.js';
 import { EMITTER } from '../physics.js';
 import { Settings } from '../settings.js';
+import { skyline } from './lighting.js';
+import { Post } from './post.js';
 
 const W = CFG.VIEW_W, H = CFG.VIEW_H, T = CFG.TILE;
 let glows = [];            // [x, y, r, 'r,g,b', a] in screen space, drawn after the darkness
@@ -340,6 +342,24 @@ function drawHoist(ctx, cam, world, time, lift) {
   }
 }
 
+// clumped flame tongues for the Firebreak horizon: [x, half-width, height, speed, phase]
+const SCORCH_SPAN = W + 120;
+const SCORCH = (() => {
+  let seed = 977;
+  const r = () => ((seed = (seed * 16807) % 2147483647) / 2147483647);
+  const out = [];
+  for (let x = 0; x < SCORCH_SPAN;) {
+    // a clump of 2-5 overlapping tongues, then a gap of embers
+    const n = 2 + ((r() * 4) | 0);
+    for (let i = 0; i < n; i++) {
+      out.push({ x: x + r() * 10, w: 5 + r() * 9, h: 12 + r() * 26, sp: 3 + r() * 4, ph: r() * 6.283 });
+      x += 6 + r() * 12;
+    }
+    x += 20 + r() * 70;
+  }
+  return out;
+})();
+
 // Firebreak: a burnt field, a brush fire along the horizon and smoke columns
 function drawScorch(ctx, cam, world, time, lift) {
   const hy = H - 250 + lift * 0.2;
@@ -349,12 +369,28 @@ function drawScorch(ctx, cam, world, time, lift) {
   g.addColorStop(0.7, `rgba(255,110,40,${0.32 * fl})`);
   g.addColorStop(1, 'rgba(255,160,70,0.45)');
   ctx.fillStyle = g; ctx.fillRect(0, hy - 80, W, 110);
-  for (let k = 0; k < 34; k++) {
-    const x = wrap(k * 67 - cam.x * 0.1, W + 80) - 40;
-    const h = 8 + (Math.sin(time * 5 + k * 1.7) * 0.5 + 0.5) * 18;
-    ctx.fillStyle = 'rgba(255,150,60,0.55)';
-    ctx.beginPath(); ctx.moveTo(x - 7, hy + 4); ctx.quadraticCurveTo(x - 2, hy - h * 0.6, x + Math.sin(time * 7 + k) * 3, hy - h); ctx.quadraticCurveTo(x + 2, hy - h * 0.6, x + 7, hy + 4); ctx.fill();
-    if (k % 3 === 0) glow(x, hy - 4, 40, '255,130,50', 0.12 * fl);
+  // the fire line: clumps of overlapping tongues of uneven size and spacing, each a
+  // soft red outer flame round an orange body and a yellow core (never a row of teeth)
+  const layers = [['rgba(220,70,40,0.32)', 1.5, 1.12], ['rgba(255,140,50,0.55)', 1, 1], ['rgba(255,220,120,0.7)', 0.45, 0.6]];
+  for (const [col, wk, hk] of layers) {
+    ctx.fillStyle = col;
+    ctx.beginPath();
+    for (const f of SCORCH) {
+      const x = wrap(f.x - cam.x * 0.1, SCORCH_SPAN) - 60;
+      if (x < -60 || x > W + 60) continue;
+      const lick = Math.sin(time * f.sp + f.ph) * 0.5 + 0.5;
+      const h = f.h * (0.65 + 0.45 * lick) * hk, w = f.w * wk;
+      const tip = x + Math.sin(time * f.sp * 1.4 + f.ph * 2) * w * 0.5;
+      ctx.moveTo(x - w, hy + 6);
+      ctx.bezierCurveTo(x - w * 1.1, hy - h * 0.35, tip - w * 0.4, hy - h * 0.7, tip, hy - h);
+      ctx.bezierCurveTo(tip + w * 0.3, hy - h * 0.6, x + w * 1.1, hy - h * 0.3, x + w, hy + 6);
+      ctx.closePath();
+    }
+    ctx.fill();
+  }
+  for (let k = 0; k < SCORCH.length; k += 4) {
+    const x = wrap(SCORCH[k].x - cam.x * 0.1, SCORCH_SPAN) - 60;
+    glow(x, hy - 8, 50, '255,130,50', 0.12 * fl);
   }
   // smoke columns leaning with the breeze
   const sf = 0.15, sspan = 520, soff = cam.x * sf;
@@ -659,6 +695,90 @@ export function drawThemeWorld(ctx, cam, world, time, th) {
   if (th.name === 'cold') drawSnowSparkle(ctx, cam, world, time);
   if (th.name === 'barn') drawBarnLanterns(ctx, cam, world, time);
   if (world.data && world.data.scene === 'waterwheel') drawMillShafts(ctx, cam, world, time);
+  if (th.name === 'works') drawTaperRacks(ctx, cam, world, time);
+  if (th.name === 'tower') drawBellRopes(ctx, cam, world, time);
+}
+
+// open cells under a ceiling at column tx: yields the ceiling row ty for each
+// ceiling with at least `clear` open cells beneath it
+function* ceilings(world, tx, clear) {
+  for (let ty = 1; ty < world.h - clear - 1; ty++) {
+    if (!world.isSolid(tx, ty) || world.cell(tx, ty) === EMITTER) continue;
+    let ok = true;
+    for (let k = 1; k <= clear && ok; k++) if (world.cell(tx, ty + k) !== 0) ok = false;
+    if (ok) yield ty;
+  }
+}
+
+const TAPER_PAIR = [-2.5, 2.5];
+// Candle Works: racks of freshly dipped tapers hanging by their wicks to cool
+function drawTaperRacks(ctx, cam, world, time) {
+  const x0 = Math.floor(cam.x / T) - 1, x1 = x0 + Math.ceil(cam.w / T) + 2;
+  for (let tx = x0; tx <= x1; tx++) {
+    if (((tx % 10) + 10) % 10 !== 6) continue;
+    for (const ty of ceilings(world, tx, 4)) {
+      const x = tx * T + T / 2, y = (ty + 1) * T;
+      if (y < cam.y - 80 || y > cam.y + cam.h + 20) continue;
+      const sw = Math.sin(time * 0.8 + tx) * 1.2;
+      ctx.strokeStyle = '#2a1a14'; ctx.lineWidth = 1.2;
+      ctx.beginPath(); ctx.moveTo(x - 16, y); ctx.lineTo(x - 18 + sw, y + 12); ctx.moveTo(x + 16, y); ctx.lineTo(x + 14 + sw, y + 12); ctx.stroke();
+      ctx.fillStyle = '#3a2216'; ctx.fillRect(x - 24 + sw, y + 11, 48, 3);
+      // pairs of tapers hung over the rod by one wick, shaded so they read as round
+      for (let k = 0; k < 4; k++) {
+        const cx = x - 15 + k * 10 + sw, len = 13 + ((tx * 7 + k * 5) % 3) * 4;
+        ctx.strokeStyle = '#2a1a14'; ctx.lineWidth = 0.8;
+        ctx.beginPath(); ctx.moveTo(cx - 2.5, y + 18); ctx.lineTo(cx, y + 12); ctx.lineTo(cx + 2.5, y + 18); ctx.stroke();
+        for (const dx of TAPER_PAIR) {
+          const px = cx + dx, l = len - (dx > 0 ? 2 : 0);
+          ctx.fillStyle = '#b89870';
+          ctx.beginPath();
+          ctx.moveTo(px - 1.8, y + 18); ctx.lineTo(px + 1.8, y + 18); ctx.lineTo(px + 1.3, y + 18 + l);
+          ctx.quadraticCurveTo(px, y + 21 + l, px - 1.3, y + 18 + l); ctx.closePath(); ctx.fill();
+          ctx.fillStyle = '#e2cca0'; ctx.fillRect(px - 1.3, y + 18, 1.3, l - 1);
+        }
+      }
+    }
+  }
+}
+
+// Bell Tower: bell ropes with striped sallies dropping from the floors above
+function drawBellRopes(ctx, cam, world, time) {
+  const x0 = Math.floor(cam.x / T) - 1, x1 = x0 + Math.ceil(cam.w / T) + 2;
+  for (let tx = x0; tx <= x1; tx++) {
+    if (((tx % 9) + 9) % 9 !== 2) continue;
+    for (const ty of ceilings(world, tx, 4)) {
+      const x = tx * T + 10, y = (ty + 1) * T;
+      if (y < cam.y - 120 || y > cam.y + cam.h + 20) continue;
+      let open = 4;
+      while (open < 7 && world.cell(tx, ty + open + 1) === 0) open++;
+      const len = open * T - 34, sw = Math.sin(time * 0.7 + tx * 1.3) * 3;
+      ctx.strokeStyle = '#6a4a34'; ctx.lineWidth = 2;
+      ctx.beginPath(); ctx.moveTo(x, y); ctx.quadraticCurveTo(x + sw * 0.4, y + len * 0.5, x + sw, y + len); ctx.stroke();
+      // the sally: a striped woollen grip
+      const sy = y + len * 0.62, sx = x + sw * 0.62;
+      ctx.fillStyle = '#a8302c';
+      ctx.beginPath(); ctx.ellipse(sx, sy, 3.6, 10, 0, 0, 6.283); ctx.fill();
+      ctx.fillStyle = '#e8d8c0'; ctx.fillRect(sx - 3.4, sy - 4, 6.8, 2); ctx.fillRect(sx - 3.4, sy + 2, 6.8, 2);
+    }
+  }
+}
+
+// Storm Mill: great gear wheels turning on the mill's back walls. Drawn between the
+// back wall and the stone (clipped to the walls), so they read as machinery behind.
+export function drawWallMotif(ctx, cam, world, th, time) {
+  if (!(world.data && world.data.scene === 'waterwheel') || Post.quality < 1) return false;
+  const sx = 15 * T, sy = 9 * T;
+  const i0 = Math.floor((cam.x - 120) / sx), i1 = Math.floor((cam.x + cam.w + 120) / sx);
+  const j0 = Math.floor((cam.y - 120) / sy), j1 = Math.floor((cam.y + cam.h + 120) / sy);
+  for (let i = i0; i <= i1; i++) for (let j = j0; j <= j1; j++) {
+    const x = i * sx + 7 * T + ((j & 1) ? 4 * T : 0), y = j * sy + 4 * T;
+    const dir = (i + j) & 1 ? 1 : -1;
+    gear(ctx, x, y, 62, 14, time * 0.18 * dir, 'rgba(10,8,26,0.5)', 10);
+    gear(ctx, x + 98, y + 40, 30, 8, -time * 0.18 * dir * 14 / 8 + 0.2, 'rgba(10,8,26,0.45)', 8);
+    ctx.strokeStyle = 'rgba(10,8,26,0.5)'; ctx.lineWidth = 5;
+    ctx.beginPath(); ctx.moveTo(x, y); ctx.lineTo(x, y - 6 * T); ctx.stroke();
+  }
+  return true;
 }
 
 function drawBells(ctx, cam, world, time) {
@@ -721,7 +841,7 @@ export function updateThemeFx(dt, P, cam, world, player, th, sfx) {
   const rnd = Math.random;
   switch (th.name) {
     case 'harvest': case 'canal':
-      if (rnd() < 3 * dt) P.firefly(cam.x + rnd() * cam.w, cam.y + cam.h * (0.35 + rnd() * 0.5));
+      if (rnd() < (th.name === 'canal' ? 1.8 : 3) * dt) P.firefly(cam.x + rnd() * cam.w, cam.y + cam.h * (0.35 + rnd() * 0.5));
       break;
     case 'barn':
       if (rnd() < 6 * dt) P.straw(cam.x + rnd() * cam.w, cam.y - 10);
@@ -778,6 +898,68 @@ export function updateThemeFx(dt, P, cam, world, player, th, sfx) {
   }
 }
 
+// Clip to open sky (screen space): one rect per run of columns sharing a skyline.
+// Returns false when no sky is in view.
+function clipToSky(ctx, cam, world) {
+  const top = skyline(world);
+  const x0 = Math.max(0, Math.floor(cam.x / T)), x1 = Math.min(world.w - 1, Math.floor((cam.x + cam.w) / T));
+  ctx.beginPath();
+  let any = false;
+  for (let tx = x0; tx <= x1;) {
+    const ty = top[tx];
+    let e = tx;
+    while (e + 1 <= x1 && top[e + 1] === ty) e++;
+    const yb = ty * T - cam.y;
+    if (yb > 0) { ctx.rect(tx * T - cam.x, 0, (e - tx + 1) * T, yb); any = true; }
+    tx = e + 1;
+  }
+  if (any) ctx.clip();
+  return any;
+}
+
+// The aurora at half resolution, cut to the open sky by a tile-res mask that is
+// smoothed on upscale, so where a roof (even an unlit one) hides it, it melts away.
+let aur = null, actx = null, smask = null, sctx = null, simg = null;
+function drawAuroraMasked(ctx, cam, world, time, lift) {
+  if (!aur) {
+    aur = document.createElement('canvas'); aur.width = W / 2; aur.height = H / 2; actx = aur.getContext('2d');
+  }
+  const top = skyline(world);
+  const x0 = Math.floor(cam.x / T) - 1, y0 = Math.floor(cam.y / T) - 1;
+  const cw = Math.ceil(W / T) + 3, ch = Math.ceil(H / T) + 3;
+  if (!smask || smask.width !== cw || smask.height !== ch) {
+    smask = document.createElement('canvas'); smask.width = cw; smask.height = ch;
+    sctx = smask.getContext('2d'); simg = sctx.createImageData(cw, ch);
+  }
+  const d = simg.data;
+  let any = false;
+  // open sky per cell, softened sideways by a 1-2-1 blur across columns
+  const sky = (i, j) => (y0 + j < top[clamp(x0 + i, 0, world.w - 1)] ? 255 : 0);
+  for (let i = 0; i < cw; i++) {
+    for (let j = 0; j < ch; j++) {
+      const o = (j * cw + i) * 4;
+      const a = (sky(i - 1, j) + 2 * sky(i, j) + sky(i + 1, j)) >> 2;
+      d[o] = d[o + 1] = d[o + 2] = 255; d[o + 3] = a;
+      if (a) any = true;
+    }
+  }
+  if (!any) return;
+  sctx.putImageData(simg, 0, 0);
+  actx.setTransform(1, 0, 0, 1, 0, 0);
+  actx.globalCompositeOperation = 'source-over';
+  actx.clearRect(0, 0, aur.width, aur.height);
+  actx.setTransform(0.5, 0, 0, 0.5, 0, 0);
+  drawAurora(actx, cam, time, lift);
+  actx.globalCompositeOperation = 'destination-in';
+  actx.imageSmoothingEnabled = true;
+  actx.drawImage(smask, x0 * T - cam.x, y0 * T - cam.y, cw * T, ch * T);
+  ctx.save();
+  ctx.globalCompositeOperation = 'lighter';
+  ctx.globalAlpha = 0.6;
+  ctx.drawImage(aur, 0, 0, W, H);
+  ctx.restore();
+}
+
 // ------------------------------------------------------------ after the darkness: queued glows + screen effects
 export function drawThemeOverlay(ctx, world, time, th) {
   for (let i = 0; i < beams.length; i += 3) {
@@ -816,8 +998,14 @@ export function drawThemeOverlay(ctx, world, time, th) {
     }
   }
   if (th.name === 'cold' && skyCam) {
-    // the aurora is light itself, so it rides over the darkness
-    ctx.save(); ctx.globalAlpha = 0.6; drawAurora(ctx, skyCam, time, skyLift); ctx.restore();
+    // the aurora is light itself, so it rides over the darkness, but only in open
+    // sky: it is clipped to the space above the first roof or ledge in each column
+    if (Post.quality >= 1) drawAuroraMasked(ctx, skyCam, world, time, skyLift);
+    else {
+      ctx.save();
+      if (clipToSky(ctx, skyCam, world)) { ctx.globalAlpha = 0.6; drawAurora(ctx, skyCam, time, skyLift); }
+      ctx.restore();
+    }
     // frost creeping in at the screen corners
     ctx.save();
     for (const [cx, cy] of [[0, 0], [W, 0], [0, H], [W, H]]) {

@@ -1,7 +1,7 @@
 // HUD candle meter, level card, menus, title and end screens, toasts.
 import { CFG, clamp, lerp } from './config.js';
-import { drawFlame, drawWick } from './render/draw-wick.js';
-import { drawBackground } from './render/draw-world.js';
+import { drawFlame, drawWick, wickMood } from './render/draw-wick.js';
+import { drawBackground, THEMES } from './render/draw-world.js';
 import { BUILD, BUILD_DATE } from './version.js';
 import { CREDITS, CREDIT_STEP } from './credits.js';
 import { keyName } from './settings.js';
@@ -51,6 +51,13 @@ export const UI = {
     const shake = opts.fail ? Math.sin(time * 60) * 3 * opts.fail : 0;
     const x = 40 + shake, base = opts.touch ? 92 : H - 30;
     const ch = lerp(5, 62, frac);
+    // a soft dark plate, so the candle and keepsake never collide with the world behind them
+    {
+      const px = opts.keepsake != null ? x + 22 : x, py = base - 26;
+      const pg = ctx.createRadialGradient(px, py, 0, px, py, 92);
+      pg.addColorStop(0, 'rgba(14,6,28,0.62)'); pg.addColorStop(0.55, 'rgba(14,6,28,0.4)'); pg.addColorStop(1, 'rgba(14,6,28,0)');
+      ctx.fillStyle = pg; ctx.fillRect(px - 92, py - 92, 184, 184);
+    }
     // dish
     ctx.fillStyle = '#4a3a50';
     ctx.strokeStyle = '#1c0d2a'; ctx.lineWidth = 2.5;
@@ -82,7 +89,7 @@ export const UI = {
     if (opts.keepsake != null) {
       // this level's keepsake: an empty outline until Wick finds it
       const pop = opts.keepsakePop || 0;
-      const kx = 82, ky = base - 6, r = 10 * (1 + 0.6 * Math.sin(pop * Math.PI) * pop);
+      const kx = 88, ky = base - 10, r = 14 * (1 + 0.6 * Math.sin(pop * Math.PI) * pop);
       if (opts.keepsake) {
         ctx.save();
         ctx.globalCompositeOperation = 'lighter';
@@ -164,7 +171,24 @@ export const UI = {
       ctx.strokeStyle = sel ? '#ffe2a0' : 'rgba(217,166,64,0.6)'; ctx.lineWidth = 2; ctx.stroke();
       ctx.font = `${sel ? 700 : 600} 19px ${SANS}`;
       ctx.fillStyle = sel ? '#2a1630' : '#fbe9c8';
-      ctx.fillText(label, cx, y + 1);
+      const cut = opts.toggles && opts.toggles[i] ? label.lastIndexOf(': ') : -1;
+      if (cut < 0) { ctx.fillText(label, cx, y + 1); return; }
+      // a setting: name on the left, ◀ value ▶ in a pill on the right
+      const name = label.slice(0, cut), value = label.slice(cut + 2);
+      ctx.textAlign = 'left';
+      ctx.fillText(name, r.x + 18, y + 1);
+      ctx.font = `700 16px ${SANS}`;
+      const vw = Math.max(64, ctx.measureText(value).width + 22), vx = r.x + r.w - 40 - vw, on = value === 'On';
+      ctx.fillStyle = sel ? 'rgba(42,22,48,0.85)' : on ? 'rgba(232,140,50,0.32)' : 'rgba(14,6,28,0.55)';
+      roundRect(ctx, vx, y - 13, vw, 26, 13); ctx.fill();
+      ctx.strokeStyle = sel ? 'rgba(42,22,48,0.9)' : 'rgba(217,166,64,0.55)'; ctx.lineWidth = 1.5; ctx.stroke();
+      ctx.textAlign = 'center';
+      ctx.fillStyle = sel ? '#ffd690' : on ? '#ffd690' : '#fbe9c8';
+      ctx.fillText(value, vx + vw / 2, y + 1);
+      ctx.font = `700 12px ${SANS}`;
+      ctx.fillStyle = sel ? '#2a1630' : 'rgba(251,233,200,0.55)';
+      ctx.fillText('◀', vx - 12, y + 1);
+      ctx.fillText('▶', vx + vw + 12, y + 1);
     });
     if (opts.footer) {
       ctx.font = `14px ${SANS}`;
@@ -187,15 +211,17 @@ export const UI = {
     const bob = Math.sin(time * 2) * 2;
     const mk = opts.menu ? smooth(clamp((opts.menuT ?? 1) / 0.4, 0, 1)) : 0;
     const wx = lerp(W / 2, W * 0.29, mk);
-    const glow = ctx.createRadialGradient(wx, H * 0.55, 10, wx, H * 0.55, 260);
+    const glow = ctx.createRadialGradient(wx, H * 0.6, 10, wx, H * 0.6, 260);
     glow.addColorStop(0, 'rgba(255,170,80,0.35)'); glow.addColorStop(1, 'rgba(255,120,60,0)');
     ctx.fillStyle = glow; ctx.fillRect(0, 0, W, H);
     ctx.fillStyle = '#3c2140';
-    ctx.beginPath(); ctx.ellipse(wx, H * 0.72 + 6, 110, 14, 0, 0, Math.PI * 2); ctx.fill();
+    // the ledge sits low enough that the flame's tip clears the tagline
+    const ly = H * 0.78;
+    ctx.beginPath(); ctx.ellipse(wx, ly + 6, 104, 13, 0, 0, Math.PI * 2); ctx.fill();
     TITLE_WICK.squash = Math.sin(time * 2) * 0.03;
     ctx.save();
-    ctx.translate(wx, H * 0.72 + bob * 0.2);
-    ctx.scale(3.4, 3.4);
+    ctx.translate(wx, ly + bob * 0.2);
+    ctx.scale(3.2, 3.2);
     TITLE_WICK.x = -TITLE_WICK.w / 2;
     TITLE_WICK.y = -TITLE_WICK.h;
     drawWick(ctx, TITLE_WICK, time);
@@ -220,7 +246,7 @@ export const UI = {
       ctx.font = `700 22px ${SANS}`;
       ctx.fillStyle = `rgba(255,214,140,${a})`;
       const prompt = device === 'touch' ? 'Tap to begin' : device === 'gamepad' ? 'Press any button' : 'Press any key or button';
-      ctx.fillText(prompt, W / 2, H * 0.86);
+      ctx.fillText(prompt, W / 2, H * 0.9);
     }
     if (opts.overlay) return;   // the options pages draw their own footer
     ctx.font = `13px ${SANS}`;
@@ -285,14 +311,52 @@ export const UI = {
   },
 
   // ---------------------------------------------------------------- end
+  // `time` is the global clock; `meta.since` is seconds since the end screen opened, and
+  // `meta.fx(ctx)` draws the fireworks over the sky
   drawEnd(ctx, time, stats, device, meta = {}) {
+    const since = meta.since ?? time;
     drawBackground(ctx, { x: time * 10, y: 0, w: W, h: H }, END_WORLD, time);
     const pulse = 0.5 + 0.5 * Math.sin(time * 1.5);
     const g = ctx.createRadialGradient(W / 2, H * 0.45, 20, W / 2, H * 0.45, W * 0.7);
-    g.addColorStop(0, `rgba(255,180,90,${0.35 + pulse * 0.1})`); g.addColorStop(1, 'rgba(60,20,60,0.4)');
+    g.addColorStop(0, `rgba(255,180,90,${0.3 + pulse * 0.08})`); g.addColorStop(1, 'rgba(60,20,60,0.4)');
     ctx.fillStyle = g; ctx.fillRect(0, 0, W, H);
+    if (meta.fx) { ctx.save(); ctx.globalCompositeOperation = 'lighter'; meta.fx(ctx); ctx.restore(); }
+
+    // the town, its windows lighting up row by row from the street to the rooftops
+    drawEndTown(ctx, since);
+
+    // the castle torch Wick lit, blazing on its plinth, with Wick beside it
+    const bx = W - 150, bgY = H - 40;
+    const blaze = clamp(since / 0.8, 0, 1);
+    ctx.save();
+    ctx.globalCompositeOperation = 'lighter';
+    const flick = 1 + Math.sin(time * 9) * 0.05 + Math.sin(time * 23) * 0.04;
+    const lg = ctx.createRadialGradient(bx, bgY - 120, 0, bx, bgY - 120, 230 * flick);
+    lg.addColorStop(0, `rgba(255,170,80,${0.5 * blaze})`); lg.addColorStop(1, 'rgba(255,110,50,0)');
+    ctx.fillStyle = lg; ctx.fillRect(bx - 240, bgY - 360, 480, 480);
+    ctx.restore();
+    ctx.fillStyle = '#2c1a2e';
+    ctx.beginPath(); ctx.ellipse(bx - 40, bgY + 6, 150, 16, 0, 0, Math.PI * 2); ctx.fill();
+    // plinth, bowl and flame
+    ctx.strokeStyle = '#1c0d2a'; ctx.lineWidth = 2.5;
+    ctx.fillStyle = '#7c6272'; roundRect(ctx, bx - 20, bgY - 82, 40, 84, 4); ctx.fill(); ctx.stroke();
+    ctx.fillStyle = '#5c4454'; ctx.fillRect(bx - 18, bgY - 80, 9, 80);
+    ctx.fillStyle = '#c0485a'; ctx.fillRect(bx - 6, bgY - 66, 12, 36);
+    ctx.fillStyle = '#886c7c'; roundRect(ctx, bx - 28, bgY - 92, 56, 12, 3); ctx.fill(); ctx.stroke();
+    ctx.fillStyle = '#3a2a36';
+    ctx.beginPath(); ctx.moveTo(bx - 36, bgY - 106); ctx.lineTo(bx + 36, bgY - 106); ctx.lineTo(bx + 24, bgY - 92); ctx.lineTo(bx - 24, bgY - 92); ctx.closePath(); ctx.fill(); ctx.stroke();
+    drawFlame(ctx, bx, bgY - 104, (16 + 8 * blaze) * flick, Math.sin(time * 1.7) * 0.12, time);
+    // Wick, beaming
+    wickMood('joy', 0.25);
+    ctx.save();
+    ctx.translate(bx - 88, bgY + Math.abs(Math.sin(time * 3)) * -3);
+    ctx.scale(2.2, 2.2);
+    END_WICK.x = -END_WICK.w / 2; END_WICK.y = -END_WICK.h; END_WICK.squash = Math.sin(time * 6) * 0.04;
+    drawWick(ctx, END_WICK, time);
+    ctx.restore();
+
     ctx.textAlign = 'center'; ctx.textBaseline = 'middle';
-    titleText(ctx, 'The castle is lit', W / 2, H * 0.19, 58, true);
+    titleText(ctx, 'The castle is lit', W / 2, H * 0.17, 58, true);
     // the payoff, a line at a time
     const lines = [
       'The festival lanterns glow again, all the way down to Market Row.',
@@ -302,28 +366,34 @@ export const UI = {
       lines.push(meta.keepsakes === 1 ? 'And brought one keepsake home from the road.'
         : `And brought ${meta.keepsakes} keepsakes home from the road.`);
     }
+    ctx.lineJoin = 'round';
     lines.forEach((line, i) => {
-      ctx.globalAlpha = clamp((time - 0.4 - i * 1.1) / 0.8, 0, 1);
+      ctx.globalAlpha = clamp((since - 0.4 - i * 1.1) / 0.8, 0, 1);
       ctx.font = `italic 19px ${SERIF}`;
+      ctx.lineWidth = 4; ctx.strokeStyle = 'rgba(28,13,42,0.55)';
+      ctx.strokeText(line, W / 2, H * 0.28 + i * 30);
       ctx.fillStyle = i === 2 ? '#ffd690' : '#fbe9c8';
-      ctx.fillText(line, W / 2, H * 0.3 + i * 30);
+      ctx.fillText(line, W / 2, H * 0.28 + i * 30);
     });
     ctx.globalAlpha = 1;
-    const sy = H * 0.3 + lines.length * 30 + 26;
+    const sy = H * 0.28 + lines.length * 30 + 22;
     ctx.font = `700 24px ${SANS}`;
+    ctx.lineWidth = 4; ctx.strokeStyle = 'rgba(28,13,42,0.6)';
+    const st = `Time  ${fmtTime(stats.time)}     Deaths  ${stats.deaths}`;
+    ctx.strokeText(st, W / 2, sy);
     ctx.fillStyle = '#ffd690';
-    ctx.fillText(`Time  ${fmtTime(stats.time)}     Deaths  ${stats.deaths}`, W / 2, sy);
+    ctx.fillText(st, W / 2, sy);
     ctx.font = `16px ${SANS}`;
-    ctx.fillStyle = 'rgba(251,233,200,0.8)';
-    ctx.fillText(`Wax drips placed: ${stats.drips}`, W / 2, sy + 34);
+    ctx.fillStyle = 'rgba(251,233,200,0.85)';
+    ctx.fillText(`Wax drips placed: ${stats.drips}`, W / 2, sy + 32);
     const a = 0.55 + 0.45 * Math.sin(time * 3);
     ctx.font = `700 20px ${SANS}`;
     const msg = device === 'touch' ? 'Tap to roll the credits' : 'Press any button to roll the credits';
-    ctx.lineWidth = 5; ctx.lineJoin = 'round';
+    ctx.lineWidth = 5;
     ctx.strokeStyle = 'rgba(28,13,42,0.85)';
-    ctx.strokeText(msg, W / 2, H * 0.82);
+    ctx.strokeText(msg, W / 2, H * 0.63);
     ctx.fillStyle = `rgba(255,214,140,${0.6 + 0.4 * a})`;
-    ctx.fillText(msg, W / 2, H * 0.82);
+    ctx.fillText(msg, W / 2, H * 0.63);
     this.menuRects = [{ x: 0, y: 0, w: W, h: H }];
   },
 
@@ -371,14 +441,28 @@ export const UI = {
     ctx.fillStyle = 'rgba(14,6,28,0.55)'; ctx.fillRect(0, 0, W, H);
     ctx.textAlign = 'center'; ctx.textBaseline = 'middle';
     titleText(ctx, 'Choose a level', W / 2, 62, 42);
-    const cols = this.SELECT_COLS, cw = 146, ch = 84, gap = 10;
+    const cols = this.SELECT_COLS, cw = 146, ch = 88, gap = 9;
     const rows = Math.ceil(levels.length / cols);
-    const x0 = W / 2 - (cols * cw + (cols - 1) * gap) / 2, y0 = 108;
-    // shrink a line's font until it fits the card
-    const fit = (text, weight, size, family, y, cx) => {
-      let px = size;
-      do { ctx.font = `${weight} ${px}px ${family}`; } while (ctx.measureText(text).width > cw - 14 && --px > 8);
-      ctx.fillText(text, cx + cw / 2, y);
+    const x0 = W / 2 - (cols * cw + (cols - 1) * gap) / 2, y0 = 100;
+    // one type size for every card: the largest at which all the names fit
+    let nameSize = 17;
+    for (; nameSize > 12; nameSize--) {
+      ctx.font = `700 ${nameSize}px ${SERIF}`;
+      if (levels.every((L) => ctx.measureText(L.name).width <= cw - 16)) break;
+    }
+    const HINT = `italic 12px ${SERIF}`;
+    // hints wrap onto a second line instead of shrinking
+    const wrap = (text) => {
+      ctx.font = HINT;
+      if (ctx.measureText(text).width <= cw - 16) return [text];
+      const words = text.split(' ');
+      let a = '';
+      for (let k = 0; k < words.length; k++) {
+        const next = a ? `${a} ${words[k]}` : words[k];
+        if (a && ctx.measureText(next).width > cw - 16) return [a, words.slice(k).join(' ')];
+        a = next;
+      }
+      return [a];
     };
     this.menuRects = [];
     levels.forEach((L, i) => {
@@ -388,6 +472,22 @@ export const UI = {
       const open = reached.has(L.name), on = i === sel;
       ctx.fillStyle = on ? 'rgba(232,140,50,0.92)' : open ? 'rgba(50,26,70,0.9)' : 'rgba(30,16,40,0.75)';
       roundRect(ctx, cx, cy, cw, ch, 12); ctx.fill();
+      const th = THEMES[L.theme];
+      if (open && !on && th) {
+        // the level's own sky, washed across the top of the card
+        ctx.save();
+        roundRect(ctx, cx, cy, cw, ch, 12); ctx.clip();
+        const sg = ctx.createLinearGradient(0, cy, 0, cy + ch);
+        sg.addColorStop(0, th.sky[2]); sg.addColorStop(0.5, th.sky[1]); sg.addColorStop(1, th.sky[0]);
+        ctx.globalAlpha = 0.5; ctx.fillStyle = sg; ctx.fillRect(cx, cy, cw, ch);
+        ctx.globalAlpha = 0.55; ctx.fillStyle = 'rgba(30,14,44,1)'; ctx.fillRect(cx, cy + 30, cw, ch - 30);
+        ctx.restore();
+        // and a chip of its warm light by the level number
+        ctx.fillStyle = th.sky[3];
+        ctx.beginPath(); ctx.arc(cx + 15, cy + 18, 4, 0, Math.PI * 2); ctx.fill();
+        ctx.strokeStyle = 'rgba(28,13,42,0.8)'; ctx.lineWidth = 1.5; ctx.stroke();
+      }
+      roundRect(ctx, cx, cy, cw, ch, 12);
       ctx.strokeStyle = on ? '#ffe2a0' : open ? 'rgba(217,166,64,0.65)' : 'rgba(120,90,130,0.4)';
       ctx.lineWidth = 2; ctx.stroke();
       ctx.font = `700 13px ${SANS}`;
@@ -395,26 +495,33 @@ export const UI = {
       // with marks in the corner, the level number moves left to make room
       const m = open && meta && meta.marks[i];
       const hasMarks = m && (m.keepsake !== null || m.swift !== null || m.bright !== null);
-      if (hasMarks) { ctx.textAlign = 'left'; ctx.fillText(`LEVEL ${i + 1}`, cx + 12, cy + 20); ctx.textAlign = 'center'; }
-      else ctx.fillText(`LEVEL ${i + 1}`, cx + cw / 2, cy + 20);
+      const chip = open && !on && th ? 10 : 0;
+      if (hasMarks) { ctx.textAlign = 'left'; ctx.fillText(`LEVEL ${i + 1}`, cx + 10 + chip, cy + 19); ctx.textAlign = 'center'; }
+      else ctx.fillText(`LEVEL ${i + 1}`, cx + cw / 2, cy + 19);
       ctx.fillStyle = on ? '#2a1630' : open ? '#fbe9c8' : 'rgba(200,180,200,0.45)';
-      fit(open ? L.name : 'Locked', 700, 17, SERIF, cy + 44, cx);
-      ctx.fillStyle = on ? 'rgba(42,22,48,0.85)' : 'rgba(251,233,200,0.6)';
-      if (open) fit(L.hint, 'italic', 12, SERIF, cy + 66, cx);
+      const hint = open ? wrap(L.hint) : null;
+      ctx.font = `700 ${nameSize}px ${SERIF}`;
+      if (open) {
+        const ny = hint.length > 1 ? cy + 42 : cy + 46;
+        ctx.fillText(L.name, cx + cw / 2, ny);
+        ctx.font = HINT;
+        ctx.fillStyle = on ? 'rgba(42,22,48,0.85)' : 'rgba(251,233,200,0.7)';
+        hint.forEach((line, k) => ctx.fillText(line, cx + cw / 2, ny + 22 + k * 14));
+      } else ctx.fillText('Locked', cx + cw / 2, cy + 44);
       if (hasMarks) {
         // keepsake / swift / bright, tucked into the top-right corner
         let mx = cx + cw - 15;
         for (const k of ['bright', 'swift', 'keepsake']) {
           if (m[k] === null) continue;
-          drawMark(ctx, k, mx, cy + 19, 6.5, m[k], on ? '#2a1630' : '#1c0d2a');
-          mx -= 16;
+          drawMark(ctx, k, mx, cy + 18, 8.5, m[k], on ? '#2a1630' : '#1c0d2a');
+          mx -= 19;
         }
       }
       if (!open) {
         // a little padlock
         ctx.strokeStyle = 'rgba(200,180,200,0.45)'; ctx.lineWidth = 2;
-        ctx.beginPath(); ctx.arc(cx + cw / 2, cy + 64, 5, Math.PI, 0); ctx.stroke();
-        ctx.fillStyle = 'rgba(200,180,200,0.45)'; ctx.fillRect(cx + cw / 2 - 7, cy + 64, 14, 10);
+        ctx.beginPath(); ctx.arc(cx + cw / 2, cy + 66, 5, Math.PI, 0); ctx.stroke();
+        ctx.fillStyle = 'rgba(200,180,200,0.45)'; ctx.fillRect(cx + cw / 2 - 7, cy + 66, 14, 10);
       }
     });
     // back button
@@ -438,23 +545,30 @@ export const UI = {
   // the card's Retry button (touch) in view coordinates, or null; set by drawCompleteCard
   retryRect: null,
 
-  drawCompleteCard(ctx, world, index, stats, shown, left, res = null, device = 'keyboard') {
+  // `focusX` is the lit goal's screen x: the card slides in on the other side, so the
+  // goal and the happy Wick beside it stay in view
+  drawCompleteCard(ctx, world, index, stats, shown, left, res = null, device = 'keyboard', focusX = null) {
     this.retryRect = null;
     const a = clamp(Math.min((shown - 0.5) / 0.35, (left + 0.3) / 0.4), 0, 1);
     if (a <= 0) return;
-    const rise = (1 - Math.min(1, (shown - 0.5) / 0.35)) * 24;
-    ctx.save();
-    ctx.globalAlpha = a;
-    ctx.translate(0, rise);
     const marks = res ? ['keepsake', 'swift', 'bright'].filter((k) => res[k] !== null) : [];
     const foot = 34;   // the retry / continue hint along the bottom
-    const w = marks.length ? 420 : 380, h = (marks.length ? 212 : 170) + foot, x = W / 2 - w / 2, y = H * (marks.length ? 0.25 : 0.28);
-    ctx.fillStyle = 'rgba(28,12,40,0.9)'; roundRect(ctx, x, y, w, h, 16); ctx.fill();
+    const w = marks.length ? 420 : 380, h = (marks.length ? 212 : 170) + foot;
+    const side = focusX == null ? 0 : focusX > W / 2 ? -1 : 1;
+    const x = side < 0 ? 34 : side > 0 ? W - 34 - w : W / 2 - w / 2, y = Math.round(H * 0.46 - h / 2);
+    const k = smooth(Math.min(1, (shown - 0.5) / 0.35));
+    const slide = side ? (1 - k) * 60 * side : 0, rise = side ? 0 : (1 - k) * 24;
+    ctx.save();
+    ctx.globalAlpha = a;
+    ctx.translate(slide + x + w / 2 - W / 2, rise);
+    // everything below is laid out around the card's centre line
+    const mid = W / 2, x0 = W / 2 - w / 2;
+    ctx.fillStyle = 'rgba(28,12,40,0.9)'; roundRect(ctx, x0, y, w, h, 16); ctx.fill();
     ctx.strokeStyle = '#d9a640'; ctx.lineWidth = 2.5; ctx.stroke();
     ctx.textAlign = 'center'; ctx.textBaseline = 'middle';
     ctx.font = `700 14px ${SANS}`; ctx.fillStyle = '#e8b03a';
     ctx.fillText(`LEVEL ${index + 1} LIT`, W / 2, y + 26);
-    if (res && res.gentle) drawGentleTag(ctx, x + w - 18, y + 16);
+    if (res && res.gentle) drawGentleTag(ctx, x0 + w - 18, y + 16);
     titleText(ctx, world.name, W / 2, y + 60, 32);
     const best = (res && res.best) || {};
     const col = (cx, label, value, isBest) => {
@@ -474,30 +588,38 @@ export const UI = {
     if (marks.length) {
       // keepsake found/missed, and the par medals for this run
       ctx.strokeStyle = 'rgba(217,166,64,0.35)'; ctx.lineWidth = 1;
-      ctx.beginPath(); ctx.moveTo(x + 24, y + 166); ctx.lineTo(x + w - 24, y + 166); ctx.stroke();
+      ctx.beginPath(); ctx.moveTo(x0 + 24, y + 166); ctx.lineTo(x0 + w - 24, y + 166); ctx.stroke();
       const par = res.par || {};
       const label = {
         keepsake: res.keepsake ? 'Keepsake found' : 'Keepsake missed',
         swift: res.gentle ? 'Swift' : `Swift  ≤${fmtTime(par.time || 0)}`,
         bright: res.gentle ? 'Bright' : `Bright  ≥${par.wax}%`,
       };
-      const slot = w / marks.length;
+      // measure each mark (badge + gap + label), then spread them inside real insets
+      const inset = 26, inner = w - inset * 2, badge = 18, pad = 7;
+      let px = 13, widths;
+      for (;; px--) {
+        ctx.font = `600 ${px}px ${SANS}`;
+        widths = marks.map((m) => badge + pad + ctx.measureText(label[m]).width);
+        if (widths.reduce((s, v) => s + v, 0) + 14 * (marks.length - 1) <= inner || px <= 10) break;
+      }
+      const total = widths.reduce((s, v) => s + v, 0);
+      const spread = marks.length > 1 ? (inner - total) / (marks.length - 1) : 0;
+      let ix = marks.length > 1 ? x0 + inset : mid - total / 2;
       marks.forEach((k, i) => {
-        const sx = x + slot * (i + 0.5);
-        ctx.font = `600 13px ${SANS}`;
-        const tw = ctx.measureText(label[k]).width;
-        const ix = sx - (tw + 24) / 2 + 9;
-        drawMark(ctx, k, ix, y + 189, 9, res[k]);
+        drawMark(ctx, k, ix + badge / 2, y + 189, 9, res[k]);
         ctx.textAlign = 'left';
+        ctx.font = `600 ${px}px ${SANS}`;
         ctx.fillStyle = res[k] ? '#ffe2a0' : 'rgba(251,233,200,0.5)';
-        ctx.fillText(label[k], ix + 15, y + 190);
+        ctx.fillText(label[k], ix + badge + pad, y + 190);
         ctx.textAlign = 'center';
+        ix += widths[i] + spread;
       });
     }
     // retry for medals, or carry on
     const fy = y + h - foot / 2 - 4;
     ctx.strokeStyle = 'rgba(217,166,64,0.35)'; ctx.lineWidth = 1;
-    ctx.beginPath(); ctx.moveTo(x + 24, fy - foot / 2 + 2); ctx.lineTo(x + w - 24, fy - foot / 2 + 2); ctx.stroke();
+    ctx.beginPath(); ctx.moveTo(x0 + 24, fy - foot / 2 + 2); ctx.lineTo(x0 + w - 24, fy - foot / 2 + 2); ctx.stroke();
     if (device === 'touch') {
       const bw = 104, bh = 26, bx = W / 2 - 128, by = fy - bh / 2;
       ctx.fillStyle = 'rgba(232,140,50,0.9)'; roundRect(ctx, bx, by, bw, bh, 13); ctx.fill();
@@ -508,8 +630,9 @@ export const UI = {
       ctx.font = `600 13px ${SANS}`; ctx.fillStyle = 'rgba(251,233,200,0.7)';
       ctx.fillText('tap elsewhere to continue', bx + bw + 14, fy + 1);
       ctx.textAlign = 'center';
-      // a finger-sized hit area, in view coordinates (the card has stopped rising by now)
-      this.retryRect = { x: bx - 10, y: by + rise - 10, w: bw + 20, h: bh + 20 };
+      // a finger-sized hit area, in view coordinates (the card has stopped moving by now)
+      const ox = slide + x - x0;
+      this.retryRect = { x: bx + ox - 10, y: by + rise - 10, w: bw + 20, h: bh + 20 };
     } else {
       const g = this.glyphs(device);
       const cont = device === 'gamepad' ? `${g.jump} continue` : 'any key continue';
@@ -578,13 +701,62 @@ const STORY_LINES = [
 ];
 
 const TITLE_WORLD = { ambient: 0.78, pxH: H, data: {}, goal: null };
-const END_WORLD = { ambient: 0.9, pxH: H, data: { finale: true }, goal: { lit: true } };
+const END_WORLD = { ambient: 0.9, pxH: H, data: { finale: true }, goal: { lit: true, litTime: 99 } };
 const TITLE_WICK = {
   w: CFG.BODY_W, h: 44, x: 0, y: 0, vx: 0, vy: 0, windVx: 0, facing: 1, onGround: true, alive: true,
   wetTime: 0, flicker: 0, squash: 0, waxFrac: () => 0.85,
 };
 
 const smooth = (k) => k * k * (3 - 2 * k);
+const END_WICK = { ...TITLE_WICK, riding: true, waxFrac: () => 0.6 };   // riding: never dozes off
+
+// The end screen's town: a row of house fronts across the bottom, built once. Each window
+// lights at its own moment, row by row from the street up, a little later further from the torch.
+let endTown = null;
+function buildEndTown() {
+  let seed = 7;
+  const rnd = () => ((seed = (seed * 16807) % 2147483647) / 2147483647);
+  const houses = [];
+  for (let x = -10; x < W - 250;) {
+    const w = 70 + rnd() * 50, h = 70 + rnd() * 80;
+    const cols = w > 100 ? 3 : 2, rows = Math.max(1, Math.floor((h - 26) / 30));
+    const wins = [];
+    for (let r = 0; r < rows; r++) for (let c = 0; c < cols; c++) {
+      if (rnd() < 0.12) continue;
+      wins.push({ x: x + (w / cols) * (c + 0.5), y: H - 22 - r * 30, at: 0.8 + r * 0.7 + (1 - x / W) * 0.6 + rnd() * 0.3 });
+    }
+    houses.push({ x, w, h, roof: rnd() < 0.6, wins });
+    x += w + 4 + rnd() * 10;
+  }
+  return houses;
+}
+function drawEndTown(ctx, since) {
+  if (!endTown) endTown = buildEndTown();
+  for (const hs of endTown) {
+    ctx.fillStyle = '#24132c';
+    ctx.fillRect(hs.x, H - hs.h, hs.w, hs.h);
+    if (hs.roof) {
+      ctx.beginPath(); ctx.moveTo(hs.x - 6, H - hs.h); ctx.lineTo(hs.x + hs.w / 2, H - hs.h - 26); ctx.lineTo(hs.x + hs.w + 6, H - hs.h); ctx.closePath(); ctx.fill();
+    } else ctx.fillRect(hs.x - 3, H - hs.h - 5, hs.w + 6, 6);
+  }
+  ctx.save();
+  for (const hs of endTown) for (const wn of hs.wins) {
+    const k = clamp((since - wn.at) / 0.35, 0, 1);
+    ctx.fillStyle = k > 0 ? `rgb(${lerp(58, 255, k) | 0},${lerp(36, 200, k) | 0},${lerp(60, 100, k) | 0})` : '#3a2440';
+    ctx.fillRect(wn.x - 6, wn.y - 16, 12, 16);
+    ctx.fillStyle = '#24132c'; ctx.fillRect(wn.x - 0.75, wn.y - 16, 1.5, 16);
+  }
+  ctx.globalCompositeOperation = 'lighter';
+  for (const hs of endTown) for (const wn of hs.wins) {
+    const k = clamp((since - wn.at) / 0.35, 0, 1);
+    if (k <= 0) continue;
+    const pop = 1 + Math.max(0, 1 - (since - wn.at) / 0.5) * 0.8;
+    const gg = ctx.createRadialGradient(wn.x, wn.y - 8, 0, wn.x, wn.y - 8, 22 * pop);
+    gg.addColorStop(0, `rgba(255,180,90,${0.3 * k})`); gg.addColorStop(1, 'rgba(255,140,60,0)');
+    ctx.fillStyle = gg; ctx.fillRect(wn.x - 30, wn.y - 38, 60, 60);
+  }
+  ctx.restore();
+}
 
 // m:ss.cc for the speedrun timer
 export function fmtClock(s) {

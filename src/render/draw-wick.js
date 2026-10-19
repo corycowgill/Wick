@@ -12,6 +12,7 @@ const WET_SHADE = '#8d97a6';
 
 // Moods are render-only: they never touch the simulation, so replays stay exact.
 // joy (torch, pumpkin, goal), ouch (moth), surprise (a door opening nearby).
+const lowRim = { rim: 0, path: null, m: null };
 const face = { mood: null, until: 0, now: 0, still: 0, lastT: 0, lookX: 0, lookY: 0 };
 export function wickMood(kind, dur = 1) {
   if (face.mood === 'joy' && kind === 'surprise' && face.until > face.now) return;
@@ -145,6 +146,26 @@ export function drawWick(ctx, p, time, opts = {}) {
   drip(w / 2 - 4, Math.min(h - 10, 6 + h * 0.25));
   drip(-w / 2 + 6, Math.min(h - 12, 3 + h * 0.12));
   ctx.restore();
+  // low wax: a warm rim outside the outline, so the danger state is the most readable one
+  const rim = p.alive ? clamp((0.25 - frac) / 0.25, 0, 1) : 0;
+  lowRim.rim = 0;
+  if (rim > 0) {
+    bodyPath();
+    ctx.strokeStyle = `rgba(255,${180 + 30 * Math.sin(time * 6) | 0},110,${0.55 + 0.35 * rim})`;
+    ctx.lineWidth = 2.4 + 3.2 * rim; ctx.lineJoin = 'round'; ctx.stroke();
+    if (opts.world) {
+      // kept for drawWickFx, which redraws the rim after the lighting has darkened the world
+      const bp = new Path2D();
+      bp.moveTo(-w / 2, -2);
+      bp.quadraticCurveTo(-w / 2 - 2, top + (h * 0.5), -w / 2 + 1, top + 8);
+      bp.quadraticCurveTo(-w / 2 + 2, top, -w / 2 + 9, top);
+      bp.lineTo(w / 2 - 9, top);
+      bp.quadraticCurveTo(w / 2 - 2, top, w / 2 - 1, top + 8);
+      bp.quadraticCurveTo(w / 2 + 2, top + (h * 0.5), w / 2, -2);
+      bp.closePath();
+      lowRim.rim = rim; lowRim.path = bp; lowRim.m = ctx.getTransform();
+    }
+  }
   bodyPath();
   ctx.strokeStyle = OUTLINE; ctx.lineWidth = 2.4; ctx.stroke();
 
@@ -240,7 +261,8 @@ export function drawWick(ctx, p, time, opts = {}) {
       const ph = (time * 0.5 + k / 3) % 1;
       ctx.globalAlpha = Math.sin(ph * Math.PI) * 0.9;
       ctx.font = `700 ${8 + ph * 6}px sans-serif`;
-      ctx.fillText('z', 17 + ph * 14 + Math.sin(ph * 6 + k) * 3, top - 14 - ph * 26);
+      // drift out sideways, away from text above Wick's head
+      ctx.fillText('z', 18 + ph * 26 + Math.sin(ph * 6 + k) * 2, top - 6 - ph * 14);
     }
     ctx.globalAlpha = 1;
   }
@@ -262,6 +284,94 @@ export function drawFlame(ctx, x, y, size, lean = 0, time = 0) {
   layer(1, '#ff6a1a');
   layer(0.72, '#ffae34');
   layer(0.42, '#fff1b8');
+}
+
+// Drawn after the lighting, in world space: the parts of Wick that must read in the dark.
+// Low-wax glow, and the death beats (a smoke curl over the burnt-out puddle, a splash column
+// and steam for a drowned flame). Render-only, timed from the death timer.
+export function drawWickFx(ctx, p, time) {
+  const cx = p.x + p.w / 2, fy = p.y + p.h;
+  const lit = (x, y, r, rgb, a) => {
+    const g = ctx.createRadialGradient(x, y, 0, x, y, r);
+    g.addColorStop(0, `rgba(${rgb},${a})`); g.addColorStop(1, `rgba(${rgb},0)`);
+    ctx.fillStyle = g; ctx.fillRect(x - r, y - r, r * 2, r * 2);
+  };
+  ctx.save();
+  if (p.alive) {
+    const rim = lowRim.rim;
+    if (rim > 0 && lowRim.path) {
+      const beat = 0.75 + 0.25 * Math.sin(time * 6);
+      ctx.globalCompositeOperation = 'lighter';
+      lit(cx, p.y + p.h * 0.55, 18 + p.h * 0.6, '255,170,90', (0.18 + 0.14 * rim) * beat);
+    }
+    ctx.restore();
+    return;
+  }
+  const since = clamp(CFG.DEATH_DELAY - (p.deathTimer || 0), 0, 2);
+  if (p.deathReason === 'burnout') {
+    // a soft spotlight holds on the puddle while the last ember dies
+    ctx.globalCompositeOperation = 'lighter';
+    lit(cx, fy - 4, 72, '255,160,80', 0.5 * (1 - since * 0.4));
+    lit(cx, fy - 4, 26, '255,200,130', 0.35);
+    const ember = Math.max(0, 1 - since / 0.5);
+    if (ember > 0) lit(cx, fy - 12, 7, '255,120,40', 0.9 * ember * (0.7 + 0.3 * Math.sin(time * 40)));
+    ctx.globalCompositeOperation = 'source-over';
+    // the smoke curl, rising and widening from the wick stub
+    const hgt = 10 + since * 110, a = 0.7 * Math.min(1, since * 8) * (1 - since / 1.1);
+    ctx.lineCap = 'round';
+    for (const [lw, col] of [[5, `rgba(40,30,50,${a * 0.6})`], [2.8, `rgba(236,228,240,${a})`]]) {
+      ctx.strokeStyle = col; ctx.lineWidth = lw;
+      ctx.beginPath();
+      for (let y = 0; y <= hgt; y += 3) {
+        const amp = 1.5 + y * 0.16;
+        const x = cx + Math.sin(y * 0.11 - time * 5) * amp + y * 0.06;
+        y ? ctx.lineTo(x, fy - 12 - y) : ctx.moveTo(x, fy - 12 - y);
+      }
+      ctx.stroke();
+    }
+    ctx.fillStyle = `rgba(210,200,220,${a * 0.5})`;
+    ctx.beginPath(); ctx.arc(cx + hgt * 0.06 + Math.sin(hgt * 0.11 - time * 5) * (1.5 + hgt * 0.16), fy - 12 - hgt, 3 + since * 6, 0, Math.PI * 2); ctx.fill();
+  } else if (p.deathReason === 'water') {
+    // a splash column at the feet, then a hiss of steam where the flame was
+    const k = clamp(since / 0.45, 0, 1), col = Math.sin(k * Math.PI);
+    if (col > 0) {
+      ctx.fillStyle = 'rgba(160,210,250,0.5)';
+      ctx.beginPath(); ctx.ellipse(cx, fy - col * 26, 4 + col * 2, col * 26, 0, 0, Math.PI * 2); ctx.fill();
+      ctx.fillStyle = 'rgba(235,248,255,0.85)';
+      ctx.beginPath(); ctx.ellipse(cx, fy - col * 46, 4 + col * 2, 5 * col, 0, 0, Math.PI * 2); ctx.fill();
+    }
+    for (let i = 0; i < 14; i++) {
+      const ang = -Math.PI / 2 + ((i * 0.618) % 1 - 0.5) * 1.9, sp = 120 + ((i * 0.37) % 1) * 140;
+      const x = cx + Math.cos(ang) * sp * since, y = fy + Math.sin(ang) * sp * since + 420 * since * since;
+      if (y > fy + 6) continue;
+      ctx.fillStyle = `rgba(200,232,255,${0.9 * (1 - since / 1.2)})`;
+      ctx.beginPath(); ctx.arc(x, y, 2.2 - i * 0.07, 0, Math.PI * 2); ctx.fill();
+    }
+    for (let i = 0; i < 4; i++) {
+      const s = since - i * 0.08;
+      if (s <= 0) continue;
+      const a = 0.55 * Math.min(1, s * 6) * (1 - s / 1.1);
+      if (a <= 0) continue;
+      ctx.fillStyle = `rgba(230,236,245,${a})`;
+      ctx.beginPath(); ctx.arc(cx + (i - 1.5) * 6 + Math.sin(time * 3 + i) * 3, p.y - 6 - s * 60, 5 + s * 16, 0, Math.PI * 2); ctx.fill();
+    }
+  }
+  ctx.restore();
+}
+
+// Low wax: a warm rim round a crisp outline, drawn after the lighting and the cold vignette
+// so the danger state stays the most readable one. Uses the body outline kept by drawWick.
+export function drawWickRim(ctx, p, time) {
+  const rim = lowRim.rim;
+  if (!p.alive || rim <= 0 || !lowRim.path) return;
+  const beat = 0.75 + 0.25 * Math.sin(time * 6);
+  ctx.save();
+  ctx.setTransform(lowRim.m);
+  ctx.lineJoin = 'round';
+  ctx.strokeStyle = `rgba(255,${180 + 30 * Math.sin(time * 6) | 0},110,${(0.6 + 0.35 * rim) * beat})`;
+  ctx.lineWidth = 2.4 + 2.6 * rim; ctx.stroke(lowRim.path);
+  ctx.strokeStyle = OUTLINE; ctx.lineWidth = 1.6; ctx.stroke(lowRim.path);
+  ctx.restore();
 }
 
 function drawPuddle(ctx, w, time) {

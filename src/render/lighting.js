@@ -5,6 +5,96 @@ import { CFG, clamp } from '../config.js';
 const T = CFG.TILE;
 let layer = null, lctx = null;
 
+// First covered row in each column (any non-empty cell): the skyline. Used to keep
+// sky-only effects (aurora, dark-zone fade, rain and snow) out of covered space.
+const skyCache = new WeakMap();
+export function skyline(world) {
+  let top = skyCache.get(world);
+  if (top) return top;
+  const { w, h, grid } = world;
+  top = new Int16Array(w);
+  for (let tx = 0; tx < w; tx++) {
+    let ty = 0;
+    while (ty < h && grid[ty * w + tx] === 0) ty++;
+    top[tx] = tx === 0 || tx === w - 1 ? h : ty;      // the border walls do not count
+  }
+  skyCache.set(world, top);
+  return top;
+}
+
+// Per-cell dark-zone strength 0..1, cached per world. Inside a zone it is 1, fading
+// out over four tiles from head height above the (smoothed) skyline; outside it falls off over three
+// tiles, so a zone's edge is a soft dusk rather than a wall of black.
+const darkCache = new WeakMap();
+function darkStrength(world) {
+  let s = darkCache.get(world);
+  if (s) return s;
+  const { w, h } = world;
+  const top = skyline(world);
+  const inner = new Float32Array(w * h);
+  let any = false;
+  for (let tx = 0; tx < w; tx++) {
+    let ts = h;
+    for (let k = -2; k <= 2; k++) { const c = clamp(tx + k, 1, w - 2); ts = Math.min(ts, top[c]); }
+    for (let ty = 0; ty < h; ty++) {
+      if (!world.isDark(tx, ty)) continue;
+      // full strength down to two tiles above the skyline (head height), then fading
+      inner[ty * w + tx] = ty >= ts - 2 ? 1 : clamp(1 - (ts - 2 - ty) / 4, 0, 1);
+      any = true;
+    }
+  }
+  s = new Float32Array(w * h);
+  if (any) {
+    const fall = [0, 0.7, 0.35, 0.1];
+    for (let ty = 0; ty < h; ty++) for (let tx = 0; tx < w; tx++) {
+      const i = ty * w + tx;
+      if (world.isDark(tx, ty)) { s[i] = inner[i]; continue; }
+      let v = 0;
+      for (let d = 1; d <= 3; d++) {
+        const f = fall[d];
+        if (tx - d >= 0) v = Math.max(v, inner[i - d] * f);
+        if (tx + d < w) v = Math.max(v, inner[i + d] * f);
+        if (ty - d >= 0) v = Math.max(v, inner[i - d * w] * f);
+        if (ty + d < h) v = Math.max(v, inner[i + d * w] * f);
+      }
+      s[i] = v;
+    }
+  }
+  s.any = any;
+  darkCache.set(world, s);
+  return s;
+}
+
+let mask = null, mctx = null, mimg = null;
+function drawDarkMask(world, vx, vy, W, H) {
+  const s = darkStrength(world);
+  if (!s.any) return;
+  const x0 = Math.floor(vx / T) - 1, y0 = Math.floor(vy / T) - 1;
+  const cw = Math.ceil(W / T) + 3, ch = Math.ceil(H / T) + 3;
+  if (!mask || mask.width !== cw || mask.height !== ch) {
+    mask = document.createElement('canvas');
+    mask.width = cw; mask.height = ch;
+    mctx = mask.getContext('2d');
+    mimg = mctx.createImageData(cw, ch);
+  }
+  const d = mimg.data, { w, h } = world;
+  let seen = false;
+  for (let j = 0; j < ch; j++) {
+    const ty = clamp(y0 + j, 0, h - 1);
+    for (let i = 0; i < cw; i++) {
+      const tx = clamp(x0 + i, 0, w - 1);
+      const a = s[ty * w + tx];
+      const o = (j * cw + i) * 4;
+      d[o] = 10; d[o + 1] = 5; d[o + 2] = 24; d[o + 3] = a * 235;
+      if (a > 0) seen = true;
+    }
+  }
+  if (!seen) return;
+  mctx.putImageData(mimg, 0, 0);
+  lctx.imageSmoothingEnabled = true;
+  lctx.drawImage(mask, x0 * T - vx, y0 * T - vy, cw * T, ch * T);
+}
+
 export const Lighting = {
   scale: 0.5,          // darkness layer resolution relative to the view
   bloom: true,
@@ -44,21 +134,9 @@ export const Lighting = {
     lctx.fillStyle = g;
     lctx.fillRect(0, 0, W, H);
 
-    // dark zones go nearly opaque
-    lctx.fillStyle = 'rgba(10,5,24,0.92)';
-    const x0 = Math.max(0, Math.floor(vx / T)), x1 = Math.min(world.w - 1, Math.floor((vx + W) / T));
-    const y0 = Math.max(0, Math.floor(vy / T)), y1 = Math.min(world.h - 1, Math.floor((vy + H) / T));
-    for (let ty = y0; ty <= y1; ty++) {
-      let run = -1;
-      for (let tx = x0; tx <= x1 + 1; tx++) {
-        const d = tx <= x1 && world.isDark(tx, ty);
-        if (d && run < 0) run = tx;
-        if (!d && run >= 0) {
-          lctx.fillRect(run * T - vx, ty * T - vy, (tx - run) * T, T + 0.5);
-          run = -1;
-        }
-      }
-    }
+    // dark zones go nearly opaque, feathered at their edges and faded out above
+    // the skyline so they never slice the sky (a tile-res mask, smoothed on upscale)
+    drawDarkMask(world, vx, vy, W, H);
 
     // cut the light holes
     lctx.globalCompositeOperation = 'destination-out';
@@ -80,6 +158,15 @@ export const Lighting = {
 
     // warm additive bloom around flames
     if (this.bloom) {
+      // many flames in one view share a bloom budget, so a torch-lined room keeps
+      // its contrast instead of summing to a milky haze
+      let n = 0;
+      for (const l of lights) {
+        if (l.dim || l.player) continue;
+        const sx = l.x - vx, sy = l.y - vy, r = l.r * 0.55;
+        if (sx > -r && sx < W + r && sy > -r && sy < H + r) n++;
+      }
+      const share = n > 4 ? Math.sqrt(4 / n) : 1;
       ctx.save();
       ctx.globalCompositeOperation = 'lighter';
       for (const l of lights) {
@@ -88,7 +175,7 @@ export const Lighting = {
         const sx = l.x - vx, sy = l.y - vy;
         if (sx < -r || sx > W + r || sy < -r || sy > H + r) continue;
         const grad = ctx.createRadialGradient(sx, sy, 0, sx, sy, r);
-        const k = l.player ? 0.22 : 0.16;
+        const k = l.player ? 0.22 : 0.16 * share;
         grad.addColorStop(0, `rgba(255,150,60,${k})`);
         grad.addColorStop(0.4, `rgba(220,80,40,${k * 0.4})`);
         grad.addColorStop(1, 'rgba(160,40,40,0)');

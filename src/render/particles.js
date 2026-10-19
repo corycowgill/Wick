@@ -4,6 +4,24 @@
 const MAX = 700;
 const LEAF_COLORS = ['#e2582c', '#f0a030', '#c8322e', '#e8c040', '#b8482a'];
 
+// cached firefly glow per colour: a bright point fading through a soft halo
+const fireflySprites = {};
+function fireflySprite(rgb) {
+  let c = fireflySprites[rgb];
+  if (c) return c;
+  c = document.createElement('canvas');
+  c.width = c.height = 32;
+  const g = c.getContext('2d');
+  const r = g.createRadialGradient(16, 16, 0, 16, 16, 16);
+  r.addColorStop(0, 'rgba(255,255,230,1)');
+  r.addColorStop(0.1, `rgba(${rgb},0.9)`);
+  r.addColorStop(0.25, `rgba(${rgb},0.28)`);
+  r.addColorStop(0.6, `rgba(${rgb},0.07)`);
+  r.addColorStop(1, `rgba(${rgb},0)`);
+  g.fillStyle = r; g.fillRect(0, 0, 32, 32);
+  return (fireflySprites[rgb] = c);
+}
+
 export class Particles {
   constructor() {
     this.list = [];
@@ -263,10 +281,12 @@ export class Particles {
         case 'firefly': {
           const blink = Math.max(0, Math.sin(p.life * 2.6 + p.phase));
           const a = Math.min(1, t * 3) * blink;
-          ctx.fillStyle = `rgba(${p.color},${a})`;
-          ctx.beginPath(); ctx.arc(p.x, p.y, p.size, 0, 6.283); ctx.fill();
-          ctx.fillStyle = `rgba(${p.color},${a * 0.18})`;
-          ctx.beginPath(); ctx.arc(p.x, p.y, p.size * 5, 0, 6.283); ctx.fill();
+          if (a <= 0.01) break;
+          // a soft gradient halo round a tiny core (a hard disc read as a UI bullet)
+          const r = p.size * 6;
+          ctx.globalAlpha = a;
+          ctx.drawImage(fireflySprite(p.color), p.x - r, p.y - r, r * 2, r * 2);
+          ctx.globalAlpha = 1;
           break;
         }
         case 'straw': {

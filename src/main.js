@@ -10,9 +10,9 @@ import { Lighting } from './render/lighting.js';
 import {
   drawBackground, drawTiles, drawProps, drawEntities, drawSignPosts, drawSignText,
   drawTileGlows, drawMist, drawForeground, themeOf, drawDripGuide, drawDecor, drawDecorGlows,
-  drawJumpShadow, drawLightDetail, drawWindStreaks,
+  drawJumpShadow, drawLightDetail, drawWindStreaks, THEMES,
 } from './render/draw-world.js';
-import { drawWick, wickMood } from './render/draw-wick.js';
+import { drawWick, drawWickFx, drawWickRim, wickMood } from './render/draw-wick.js';
 import { Particles } from './render/particles.js';
 import { Audio } from './audio.js';
 import { UI } from './ui.js';
@@ -548,6 +548,7 @@ function drawOptions() {
   UI.drawMenu(ctx, o.page === 'keys' ? 'Controls' : o.page === 'touch' ? 'Touch controls' : 'Options', items.map((i) => i.label), state.sel, {
     top: H * 0.2, backdrop: o.from === 'title' ? 'rgba(14,6,28,0.8)' : undefined,
     footer: (items[state.sel] && items[state.sel].info) || '',
+    toggles: items.map((i) => !!i.toggle),
   });
 }
 
@@ -621,6 +622,11 @@ function update(dt) {
   }
 
   if (state.scene === 'end') {
+    // fireworks over the lit castle (screen space, presentation only)
+    if ((state.endFw = (state.endFw ?? 0.6) - dt) <= 0) {
+      state.endFw = 0.45 + Math.random() * 0.7;
+      P.firework(80 + Math.random() * (W - 160), 50 + Math.random() * 150);
+    }
     state.particles.update(dt);
     if (state.time > state.endAt + 1.2 && (input.anyPressed || state.tap)) { state.tap = null; toCredits(); }
     return;
@@ -673,6 +679,8 @@ function update(dt) {
         finishedGame();
         state.scene = 'end';
         state.endAt = state.time;
+        state.endFw = 0.6;
+        P.clear();
         Audio.music('end');
         Audio.ambience(null);
         Audio.setFlame(0, false);
@@ -760,7 +768,26 @@ function update(dt) {
 }
 
 // ---------------------------------------------------------------- render
+// The page behind the canvas (the pillarbox bars on wide phones) takes the current sky,
+// dimmed toward the night so the bars frame the view without pulling the eye.
+let pageSky = null;
+function setPageSky(name) {
+  if (name === pageSky) return;
+  pageSky = name;
+  const sky = (THEMES[name] || THEMES.dusk).sky;
+  const dim = (hex, k) => {
+    const n = parseInt(hex.slice(1), 16), m = [12, 6, 24];
+    return `rgb(${[16, 8, 0].map((sh, i) => Math.round(((n >> sh) & 255) * (1 - k) + m[i] * k)).join(',')})`;
+  };
+  const st = document.body.style;
+  st.setProperty('--sky-a', dim(sky[0], 0.35));
+  st.setProperty('--sky-b', dim(sky[1], 0.55));
+  st.setProperty('--sky-c', dim(sky[0], 0.75));
+}
+
 function render() {
+  setPageSky(state.scene === 'play' && state.world ? themeOf(state.world).name
+    : state.scene === 'end' || state.scene === 'credits' ? 'castle' : 'dusk');
   ctx.setTransform(scale, 0, 0, scale, 0, 0);
   ctx.imageSmoothingEnabled = true;
   const t = state.time;
@@ -777,7 +804,9 @@ function render() {
     UI.drawStory(ctx, t - state.storyAt, Input.lastDevice);
   } else if (state.scene === 'end') {
     const m = selectMarks();
-    UI.drawEnd(ctx, t, state.stats, Input.lastDevice, { keepsakes: m.kGot, keepsakeTotal: m.kAll });
+    UI.drawEnd(ctx, t, state.stats, Input.lastDevice, {
+      keepsakes: m.kGot, keepsakeTotal: m.kAll, since: t - state.endAt, fx: (c) => P.draw(c, 'glow'),
+    });
   } else if (state.scene === 'credits') {
     if (!UI.drawCredits(ctx, t, state.creditScroll, Input.lastDevice)) state.creditsDone = true;
   } else {
@@ -817,6 +846,7 @@ function renderPlay(t) {
 
   ctx.save();
   ctx.translate(-cam.x, -cam.y);
+  drawWickFx(ctx, player, t);
   drawTileGlows(ctx);
   drawLightDetail(ctx, cam, world, lights, t);
   drawDecorGlows(ctx, t);
@@ -827,7 +857,6 @@ function renderPlay(t) {
   P.draw(ctx, 'glow');
   ctx.globalCompositeOperation = 'source-over';
   drawWindStreaks(ctx, cam, world, t);
-  drawSignText(ctx, cam, world, player, UI.glyphs(Input.lastDevice));
   P.draw(ctx, 'fg');
   ctx.restore();
   drawThemeOverlay(ctx, world, t, themeOf(world));
@@ -854,7 +883,13 @@ function renderPlay(t) {
     ctx.restore();
   }
   Lighting.coldVignette(ctx, player.waxFrac(), t);
+  drawWickRim(ctx, player, t);
   Post.finish(ctx, themeOf(world).name, t);
+  // sign bubbles are UI: drawn clean, after the grade and grain
+  ctx.save();
+  ctx.translate(-cam.x, -cam.y);
+  drawSignText(ctx, cam, world, player, UI.glyphs(Input.lastDevice));
+  ctx.restore();
   UI.drawHUD(ctx, player, t, {
     muted: Audio.muted, touch: Input.lastDevice === 'touch', fail: state.hudFail,
     keepsake: world.keepsake ? !!world.keepsake.got : null, keepsakePop: state.keepsakePop,
@@ -868,7 +903,7 @@ function renderPlay(t) {
     const k = Math.max(0, 1 - state.completeTimer / 0.6);
     if (k > 0) { ctx.fillStyle = `rgba(14,6,28,${k})`; ctx.fillRect(0, 0, W, H); }
     const shown = state.completeMax - state.completeTimer;
-    if (!world.data.finale) UI.drawCompleteCard(ctx, world, state.levelIndex, state.levelStats, shown, state.completeTimer, state.levelResult, Input.lastDevice);
+    if (!world.data.finale) UI.drawCompleteCard(ctx, world, state.levelIndex, state.levelStats, shown, state.completeTimer, state.levelResult, Input.lastDevice, world.goal.x - cam.x);
   }
   if (state.iris < 1) Post.iris(ctx, state.iris, player.cx - cam.x, player.y + player.h / 2 - cam.y);
   if (state.paused && !state.rotateBlock) {

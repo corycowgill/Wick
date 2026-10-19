@@ -100,14 +100,17 @@ function drawMothBody(ctx, m, t) {
   ctx.translate(m.x, m.y);
   ctx.scale(m.facing * 1.6, 1.6);
   // wings: upper pair and lower pair, flapping, with a warm rim
-  ctx.lineWidth = 0.9;
-  ctx.strokeStyle = `rgba(232,${120 - near * 50 | 0},70,${0.75 + near * 0.25})`;
-  ctx.fillStyle = '#6a4a52';
+  // a dark ink edge under a bright ember rim, so the wings cut out of violet and canal skies
+  ctx.fillStyle = '#7a5458';
   for (const s of [-1, 1]) {
     ctx.beginPath();
     ctx.ellipse(-2, s * 5 * flap, 9, 5 * (0.35 + flap * 0.65), s * 0.5, 0, 6.283);
-    ctx.fill(); ctx.stroke();
+    ctx.strokeStyle = '#2a1420'; ctx.lineWidth = 2;
+    ctx.stroke(); ctx.fill();
+    ctx.strokeStyle = `rgba(255,${176 - near * 90 | 0},${96 - near * 30 | 0},${0.9 + near * 0.1})`; ctx.lineWidth = 1.3;
+    ctx.stroke();
   }
+  ctx.strokeStyle = `rgba(240,${130 - near * 60 | 0},74,${0.8 + near * 0.2})`; ctx.lineWidth = 0.9;
   ctx.fillStyle = '#4a3040';
   for (const s of [-1, 1]) {
     ctx.beginPath();
