@@ -83,5 +83,9 @@ export const CFG = {
   GOAL_DELAY: 1.2,
 };
 
+// wax multipliers for the "Gentle wax" option; the player reads one of these, CFG never changes
+export const NO_ASSIST = Object.freeze({ drain: 1, steal: 1, waterTime: CFG.WATER_KILL_TIME });
+export const GENTLE = Object.freeze({ drain: 0.6, steal: 0.5, waterTime: 1.0 });
+
 export const lerp = (a, b, t) => a + (b - a) * t;
 export const clamp = (v, lo, hi) => (v < lo ? lo : v > hi ? hi : v);

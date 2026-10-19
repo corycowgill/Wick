@@ -2,6 +2,7 @@
 // Gameplay reads `input` and never knows which device is in use.
 import { GamepadInput } from './input-gamepad.js';
 import { TouchControls } from './input-touch.js';
+import { DEFAULT_KEYS } from './settings.js';
 
 export const input = {
   left: false, right: false, moveX: 0,
@@ -13,18 +14,30 @@ export const input = {
   confirmPressed: false, backPressed: false, anyPressed: false,
 };
 
-const KEYMAP = {
+// fixed keys; jump/drip/soak come from the (remappable) bindings, see setBindings()
+const FIXED_KEYS = {
   ArrowLeft: 'left', KeyA: 'left', ArrowRight: 'right', KeyD: 'right',
-  Space: 'jump', ArrowUp: 'jump', KeyW: 'jump',
-  ArrowDown: 'drip', KeyS: 'drip', KeyX: 'drip',
-  KeyE: 'reabsorb', KeyR: 'restart', Escape: 'pause', KeyP: 'pause', KeyM: 'mute',
+  KeyR: 'restart', Escape: 'pause', KeyP: 'pause', KeyM: 'mute',
   Enter: 'confirm', NumpadEnter: 'confirm', Backspace: 'back',
 };
+let KEYMAP = {};
 const MENU_ALIAS = { ArrowUp: 'up', KeyW: 'up', ArrowDown: 'down', KeyS: 'down', ArrowLeft: 'mleft', ArrowRight: 'mright', KeyA: 'mleft', KeyD: 'mright', Space: 'confirm', Escape: 'back' };
 
 const kbHeld = {};
 let kbPressed = {};
 let anyKey = false;
+let capture = null;            // remap prompt: the next key press goes here instead
+
+// keys: { jump: [codes], drip: [codes], soak: [codes] }
+export function setBindings(keys) {
+  const m = { ...FIXED_KEYS };
+  for (const c of keys.jump) m[c] = 'jump';
+  for (const c of keys.drip) m[c] = 'drip';
+  for (const c of keys.soak) m[c] = 'reabsorb';
+  KEYMAP = m;
+  for (const k in kbHeld) kbHeld[k] = false;
+}
+setBindings(DEFAULT_KEYS);
 
 export const Input = {
   input,
@@ -37,6 +50,14 @@ export const Input = {
 
   init(win = window) {
     win.addEventListener('keydown', (e) => {
+      if (capture) {
+        e.preventDefault();
+        if (e.repeat) return;
+        const cb = capture;
+        capture = null;
+        cb(e.code);
+        return;
+      }
       const a = KEYMAP[e.code];
       if (a || MENU_ALIAS[e.code]) e.preventDefault();
       if (e.repeat) return;
@@ -61,6 +82,9 @@ export const Input = {
     }, true);
     win.addEventListener('touchend', () => { if (this.onGesture) this.onGesture(); }, true);
   },
+
+  // hand the next key press to `cb(code)` (the remap prompt); null cancels
+  captureKey(cb) { capture = cb; },
 
   setDevice(d) {
     if (d === this.lastDevice) return;

@@ -4,6 +4,7 @@ import { drawFlame, drawWick } from './render/draw-wick.js';
 import { drawBackground } from './render/draw-world.js';
 import { BUILD, BUILD_DATE } from './version.js';
 import { CREDITS, CREDIT_STEP } from './credits.js';
+import { keyName } from './settings.js';
 
 const W = CFG.VIEW_W, H = CFG.VIEW_H;
 const SERIF = 'Georgia, "Times New Roman", serif';
@@ -21,6 +22,10 @@ export const UI = {
   toasts: [],
 
   glyphs(device) { return GLYPHS[device] || GLYPHS.keyboard; },
+  // keyboard glyphs follow the remapped keys (the first key of each action)
+  setKeys(keys) {
+    GLYPHS.keyboard = { ...GLYPHS.keyboard, jump: keyName(keys.jump[0]), drip: keyName(keys.drip[0]), absorb: keyName(keys.soak[0]) };
+  },
 
   toast(text, time = 2.5) {
     this.toasts = this.toasts.filter((t) => t.text !== text);
@@ -87,11 +92,32 @@ export const UI = {
       }
       drawMark(ctx, 'keepsake', kx, ky, r, opts.keepsake);
     }
+    let ty = 14;
+    const rx = opts.touch ? W - 84 : W - 16;   // clear of the touch pause button
+    if (opts.timer != null) {
+      // speedrun timer: this level, then the whole run underneath
+      ctx.save();
+      ctx.textAlign = 'right'; ctx.textBaseline = 'top';
+      ctx.font = `700 20px ${SANS}`;
+      ctx.lineWidth = 4; ctx.lineJoin = 'round'; ctx.strokeStyle = 'rgba(28,13,42,0.8)';
+      const txt = fmtClock(opts.timer);
+      ctx.strokeText(txt, rx, ty);
+      ctx.fillStyle = opts.timerGentle ? '#bfe3a0' : '#ffd690';
+      ctx.fillText(txt, rx, ty);
+      if (opts.runTimer != null) {
+        ctx.font = `600 12px ${SANS}`;
+        const rt = `run ${fmtClock(opts.runTimer)}`;
+        ctx.lineWidth = 3; ctx.strokeText(rt, rx, ty + 24);
+        ctx.fillStyle = 'rgba(251,233,200,0.75)'; ctx.fillText(rt, rx, ty + 24);
+      }
+      ctx.restore();
+      ty += 46;
+    }
     if (opts.muted) {
       ctx.fillStyle = 'rgba(251,233,200,0.7)';
       ctx.font = `600 13px ${SANS}`;
       ctx.textAlign = 'right'; ctx.textBaseline = 'top';
-      ctx.fillText('sound off (M)', W - 16, 14);
+      ctx.fillText('sound off (M)', W - 16, ty);
       ctx.textAlign = 'left';
     }
   },
@@ -123,12 +149,13 @@ export const UI = {
     ctx.fillRect(0, 0, W, H);
     ctx.textAlign = 'center'; ctx.textBaseline = 'middle';
     const top = opts.top ?? H * 0.3;
-    if (title) titleText(ctx, title, W / 2, top, 48);
+    const cx = opts.cx ?? W / 2;
+    if (title) titleText(ctx, title, cx, top, 48);
     this.menuRects = [];
     items.forEach((label, i) => {
       const y = top + 74 + i * 50;
       const bw = 340, bh = 40;
-      const r = { x: W / 2 - bw / 2, y: y - bh / 2, w: bw, h: bh };
+      const r = { x: cx - bw / 2, y: y - bh / 2, w: bw, h: bh };
       this.menuRects.push(r);
       const sel = i === selected;
       ctx.fillStyle = sel ? 'rgba(232,140,50,0.9)' : 'rgba(50,26,70,0.85)';
@@ -136,12 +163,12 @@ export const UI = {
       ctx.strokeStyle = sel ? '#ffe2a0' : 'rgba(217,166,64,0.6)'; ctx.lineWidth = 2; ctx.stroke();
       ctx.font = `${sel ? 700 : 600} 19px ${SANS}`;
       ctx.fillStyle = sel ? '#2a1630' : '#fbe9c8';
-      ctx.fillText(label, W / 2, y + 1);
+      ctx.fillText(label, cx, y + 1);
     });
     if (opts.footer) {
       ctx.font = `14px ${SANS}`;
       ctx.fillStyle = 'rgba(251,233,200,0.75)';
-      ctx.fillText(opts.footer, W / 2, top + 74 + items.length * 50 + 14);
+      ctx.fillText(opts.footer, cx, top + 74 + items.length * 50 + 14);
     }
     ctx.restore();
   },
@@ -155,16 +182,18 @@ export const UI = {
     g.addColorStop(0, 'rgba(20,10,40,0)'); g.addColorStop(1, 'rgba(20,10,40,0.85)');
     ctx.fillStyle = g; ctx.fillRect(0, 0, W, H);
 
-    // Wick, big, on a little cobble ledge
+    // Wick, big, on a little cobble ledge; steps aside to make room for the menu
     const bob = Math.sin(time * 2) * 2;
-    const glow = ctx.createRadialGradient(W / 2, H * 0.55, 10, W / 2, H * 0.55, 260);
+    const mk = opts.menu ? smooth(clamp((opts.menuT ?? 1) / 0.4, 0, 1)) : 0;
+    const wx = lerp(W / 2, W * 0.29, mk);
+    const glow = ctx.createRadialGradient(wx, H * 0.55, 10, wx, H * 0.55, 260);
     glow.addColorStop(0, 'rgba(255,170,80,0.35)'); glow.addColorStop(1, 'rgba(255,120,60,0)');
     ctx.fillStyle = glow; ctx.fillRect(0, 0, W, H);
     ctx.fillStyle = '#3c2140';
-    ctx.beginPath(); ctx.ellipse(W / 2, H * 0.72 + 6, 110, 14, 0, 0, Math.PI * 2); ctx.fill();
+    ctx.beginPath(); ctx.ellipse(wx, H * 0.72 + 6, 110, 14, 0, 0, Math.PI * 2); ctx.fill();
     TITLE_WICK.squash = Math.sin(time * 2) * 0.03;
     ctx.save();
-    ctx.translate(W / 2, H * 0.72 + bob * 0.2);
+    ctx.translate(wx, H * 0.72 + bob * 0.2);
     ctx.scale(3.4, 3.4);
     TITLE_WICK.x = -TITLE_WICK.w / 2;
     TITLE_WICK.y = -TITLE_WICK.h;
@@ -179,8 +208,12 @@ export const UI = {
     ctx.fillText('A candle-cat. Reach the next torch before you burn out.', W / 2, H * 0.29);
 
     if (opts.menu) {
-      this.drawMenu(ctx, null, opts.menu, opts.selected, { backdrop: 'rgba(0,0,0,0)', top: H * 0.7 });
-    } else {
+      // a column to the right of Wick, centred on the ledge
+      ctx.save();
+      ctx.globalAlpha = mk;
+      this.drawMenu(ctx, null, opts.menu, opts.selected, { backdrop: 'rgba(0,0,0,0)', cx: W * 0.69, top: H * 0.6 - 74 - (opts.menu.length - 1) * 25 });
+      ctx.restore();
+    } else if (!opts.overlay) {
       this.menuRects = [];
       const a = 0.55 + 0.45 * Math.sin(time * 3);
       ctx.font = `700 22px ${SANS}`;
@@ -188,13 +221,14 @@ export const UI = {
       const prompt = device === 'touch' ? 'Tap to begin' : device === 'gamepad' ? 'Press any button' : 'Press any key or button';
       ctx.fillText(prompt, W / 2, H * 0.86);
     }
+    if (opts.overlay) return;   // the options pages draw their own footer
     ctx.font = `13px ${SANS}`;
     ctx.fillStyle = 'rgba(251,233,200,0.6)';
     const help = device === 'touch'
       ? (opts.standalone ? 'Hold your phone sideways.' : 'Tip: Share → Add to Home Screen to play full screen.')
       : device === 'gamepad'
         ? 'Ⓐ jump   Ⓧ drip wax   Ⓑ soak blob   Ⓨ restart   Menu pause'
-        : '←→ move   Space jump   ↓ drip wax   E soak blob   R restart   Esc pause   M mute';
+        : `←→ move   ${GLYPHS.keyboard.jump} jump   ${GLYPHS.keyboard.drip} drip wax   ${GLYPHS.keyboard.absorb} soak blob   R restart   Esc pause   M mute`;
     ctx.fillText(help, W / 2, H - 18);
     ctx.font = `11px ${SANS}`;
     ctx.textAlign = 'right';
@@ -414,6 +448,7 @@ export const UI = {
     ctx.textAlign = 'center'; ctx.textBaseline = 'middle';
     ctx.font = `700 14px ${SANS}`; ctx.fillStyle = '#e8b03a';
     ctx.fillText(`LEVEL ${index + 1} LIT`, W / 2, y + 26);
+    if (res && res.gentle) drawGentleTag(ctx, x + w - 18, y + 16);
     titleText(ctx, world.name, W / 2, y + 60, 32);
     const best = (res && res.best) || {};
     const col = (cx, label, value, isBest) => {
@@ -437,8 +472,8 @@ export const UI = {
       const par = res.par || {};
       const label = {
         keepsake: res.keepsake ? 'Keepsake found' : 'Keepsake missed',
-        swift: `Swift  ≤${fmtTime(par.time || 0)}`,
-        bright: `Bright  ≥${par.wax}%`,
+        swift: res.gentle ? 'Swift' : `Swift  ≤${fmtTime(par.time || 0)}`,
+        bright: res.gentle ? 'Bright' : `Bright  ≥${par.wax}%`,
       };
       const slot = w / marks.length;
       marks.forEach((k, i) => {
@@ -487,6 +522,39 @@ const TITLE_WICK = {
   w: CFG.BODY_W, h: 44, x: 0, y: 0, vx: 0, vy: 0, windVx: 0, facing: 1, onGround: true, alive: true,
   wetTime: 0, flicker: 0, squash: 0, waxFrac: () => 0.85,
 };
+
+const smooth = (k) => k * k * (3 - 2 * k);
+
+// m:ss.cc for the speedrun timer
+export function fmtClock(s) {
+  const m = Math.floor(s / 60), sec = Math.floor(s % 60), cs = Math.floor((s * 100) % 100);
+  return `${m}:${String(sec).padStart(2, '0')}.${String(cs).padStart(2, '0')}`;
+}
+
+// a small green leaf and "gentle", right-aligned at (x, y): this run used gentle wax
+function drawGentleTag(ctx, x, y) {
+  ctx.save();
+  ctx.font = `700 11px ${SANS}`;
+  ctx.textAlign = 'right'; ctx.textBaseline = 'middle';
+  const tw = ctx.measureText('gentle').width;
+  const bw = tw + 30, bx = x - bw;
+  ctx.fillStyle = 'rgba(70,110,60,0.85)';
+  roundRect(ctx, bx, y - 10, bw, 20, 10); ctx.fill();
+  ctx.strokeStyle = 'rgba(190,230,160,0.8)'; ctx.lineWidth = 1.2; ctx.stroke();
+  // leaf
+  const lx = bx + 11, ly = y;
+  ctx.fillStyle = '#bfe3a0';
+  ctx.beginPath();
+  ctx.moveTo(lx - 5, ly + 4);
+  ctx.quadraticCurveTo(lx - 5, ly - 5, lx + 5, ly - 5);
+  ctx.quadraticCurveTo(lx + 5, ly + 4, lx - 5, ly + 4);
+  ctx.fill();
+  ctx.strokeStyle = 'rgba(40,70,35,0.9)'; ctx.lineWidth = 1;
+  ctx.beginPath(); ctx.moveTo(lx - 5, ly + 4); ctx.lineTo(lx + 2, ly - 2); ctx.stroke();
+  ctx.fillStyle = '#e6f5d6';
+  ctx.fillText('gentle', x - 8, y + 0.5);
+  ctx.restore();
+}
 
 export function fmtTime(s) {
   const m = Math.floor(s / 60), sec = Math.floor(s % 60);

@@ -1,7 +1,8 @@
 // WICK: game loop, scene switching, and the glue between systems.
 import { CFG } from './config.js';
 import { Events } from './events.js';
-import { Input, input } from './input.js';
+import { Input, input, setBindings } from './input.js';
+import { Settings, keyName } from './settings.js';
 import { Player } from './player.js';
 import { createWorld } from './level.js';
 import { Camera } from './render/camera.js';
@@ -144,21 +145,24 @@ function recordClear(world, stats) {
   const time = stats.time, wax = Math.round(stats.wax), deaths = stats.deaths;
   const par = (world.data && world.data.par) || null;
   const hasKeepsake = !!world.keepsake, gotKeepsake = !!(world.keepsake && world.keepsake.got);
+  // gentle-wax runs keep keepsakes and deaths, but earn no medals and set no time/wax bests
+  const gentle = !!stats.gentle;
   const res = {
     best: {
-      time: prev.time != null && time < prev.time,
-      wax: prev.wax != null && wax > prev.wax,
+      time: !gentle && prev.time != null && time < prev.time,
+      wax: !gentle && prev.wax != null && wax > prev.wax,
       deaths: prev.deaths != null && deaths < prev.deaths,
     },
     keepsake: hasKeepsake ? gotKeepsake : null,
-    swift: par && par.time != null ? time <= par.time : null,
-    bright: par && par.wax != null ? wax >= par.wax : null,
+    swift: par && par.time != null ? !gentle && time <= par.time : null,
+    bright: par && par.wax != null ? !gentle && wax >= par.wax : null,
     par,
+    gentle,
   };
   if (state.replay) return res;   // bot replays don't touch the player's bests
   recs.levels[world.name] = {
-    time: prev.time != null ? Math.min(prev.time, time) : time,
-    wax: prev.wax != null ? Math.max(prev.wax, wax) : wax,
+    time: gentle ? prev.time : prev.time != null ? Math.min(prev.time, time) : time,
+    wax: gentle ? prev.wax : prev.wax != null ? Math.max(prev.wax, wax) : wax,
     deaths: prev.deaths != null ? Math.min(prev.deaths, deaths) : deaths,
     keepsake: !!prev.keepsake || gotKeepsake,
     swift: !!prev.swift || !!res.swift,
@@ -170,8 +174,19 @@ function recordClear(world, stats) {
 
 // ---------------------------------------------------------------- canvas sizing
 function resize() {
-  const vw = window.innerWidth, vh = window.innerHeight;
-  const s = Math.min(vw / W, vh / H);
+  // fit the visible viewport (Safari's toolbars can cover part of innerHeight), minus the safe-area insets
+  const vv = window.visualViewport;
+  const vw = vv ? vv.width : window.innerWidth, vh = vv ? vv.height : window.innerHeight;
+  if (vv) {
+    // pin the page to the visible area so the canvas centres in what the player can actually see
+    document.body.style.top = vv.offsetTop + 'px';
+    document.body.style.bottom = 'auto';
+    document.body.style.height = vh + 'px';
+  }
+  const bs = getComputedStyle(document.body);
+  const padX = (parseFloat(bs.paddingLeft) || 0) + (parseFloat(bs.paddingRight) || 0);
+  const padY = (parseFloat(bs.paddingTop) || 0) + (parseFloat(bs.paddingBottom) || 0);
+  const s = Math.min((vw - padX) / W, (vh - padY) / H);
   const cssW = Math.floor(W * s), cssH = Math.floor(H * s);
   canvas.style.width = cssW + 'px';
   canvas.style.height = cssH + 'px';
@@ -185,11 +200,15 @@ function resize() {
   if (state.rotateBlock && state.scene === 'play') state.paused = true;
 }
 window.addEventListener('resize', resize);
+// iOS reports the new size a moment after rotating
+window.addEventListener('orientationchange', () => setTimeout(resize, 350));
 if (window.visualViewport) window.visualViewport.addEventListener('resize', resize);
 resize();
 
 // ---------------------------------------------------------------- input wiring
 Input.init(window);
+Settings.onKeysChange = (keys) => { setBindings(keys); UI.setKeys(keys); };
+Settings.onKeysChange(Settings.get().keys);
 Input.onGesture = () => Audio.init();
 Input.gamepad.onConnect = () => UI.toast('Controller connected');
 Input.gamepad.onDisconnect = () => {
@@ -221,11 +240,12 @@ window.addEventListener('blur', () => { if (state.scene === 'play' && !DEBUG) st
 
 // ---------------------------------------------------------------- events -> juice
 const P = state.particles;
+const shake = (amount) => { if (Settings.get().shake) state.camera.shake(amount); };
 Events.on('jump', (e) => { Audio.sfx('jump', e); P.dust(e.x, e.y, 4, 0.6); });
 Events.on('land', (e) => {
   Audio.sfx('land', e);
   P.dust(e.x, e.y, 6 + (e.hard * 6 | 0), 0.6 + e.hard);
-  if (e.frac > 0.6) state.camera.shake(1.5 + e.hard * 4 * e.frac);
+  if (e.frac > 0.6) shake(1.5 + e.hard * 4 * e.frac);
   if (e.hard > 0.15) P.shock(e.x, e.y, e.hard);
   if (e.frac > 0.85 && e.hard > 0.2) Input.gamepad.rumble('land');
 });
@@ -269,14 +289,14 @@ Events.on('keepsake', (e) => {
 Events.on('blobLand', (e) => { P.splat(e.x, e.y - 4, 6); P.dust(e.x, e.y, 4, 0.5); });
 Events.on('ignite', (e) => { Audio.sfx('ignite'); P.sparks(e.x, e.y, 6, 90); });
 Events.on('plate', (e) => { Audio.sfx('plate', { down: e.down }); if (e.down) P.dust(e.x, e.y, 4, 0.4); });
-Events.on('door', (e) => { if (e.open) wickMood('surprise', 0.6); Audio.sfx('door', { open: e.open }); P.dust(e.x, e.y, 8, 0.7); state.camera.shake(1.5); });
+Events.on('door', (e) => { if (e.open) wickMood('surprise', 0.6); Audio.sfx('door', { open: e.open }); P.dust(e.x, e.y, 8, 0.7); shake(1.5); });
 Events.on('moth', (e) => {
   wickMood('ouch', 0.7);
   Audio.sfx('moth');
   state.hudFail = 1;
   P.sparks(e.x, e.y, 10, 120, '255,230,190');
   P.smoke(e.x, e.y, 4);
-  state.camera.shake(3);
+  shake(3);
   state.hitStop = 2;
   Input.gamepad.rumble('land');
 });
@@ -286,7 +306,7 @@ Events.on('death', (e) => {
   if (e.reason === 'water') { for (let i = 0; i < 18; i++) P.steam(e.x, e.y - 30); P.ring(e.x, e.y - 30, 70, '200,220,255'); }
   else { P.splat(e.x, e.y - 20, 14); P.sparks(e.x, e.y - 30, 8, 80, '255,120,50'); }
   P.smoke(e.x, e.y - 10, 12);
-  state.camera.shake(3);
+  shake(3);
   Input.gamepad.rumble('death');
 });
 Events.on('levelComplete', (e) => {
@@ -313,6 +333,7 @@ function startLevel(i) {
   state.world = createWorld(LEVELS[i]);
   state.world.onSplash = (x, y) => { if (Math.random() < 0.35) P.splash(x, y); };
   const sp = state.world.spawn;
+  state.player.assist = Settings.assist();
   state.player.spawn(sp.x, sp.y, CFG.WAX_MAX);
   state.camera.snap(state.player, state.world);
   P.clear();
@@ -327,7 +348,7 @@ function startLevel(i) {
   Audio.music('play', i < 5 ? 'town' : 'night');
   Audio.ambience(themeOf(state.world).rain ? 'rain' : null);
   state.gusts = new Map();
-  state.levelStats = { time: 0, deaths: 0, wax: 0 };
+  state.levelStats = { time: 0, deaths: 0, wax: 0, gentle: Settings.get().gentle };
   state.levelResult = null;
   state.keepsakePop = 0;
 }
@@ -368,6 +389,7 @@ function toTitle() {
   Audio.music('title');
   Audio.ambience(null);
   Audio.setFlame(0, false);
+  Audio.heartbeat(1, false);
 }
 
 function titleItems() {
@@ -376,12 +398,104 @@ function titleItems() {
   if (i > 0) items.push({ label: `Continue: ${LEVELS[i].name}`, act: () => newGame(i) });
   items.push({ label: i > 0 ? 'New game' : 'Start', act: () => (i > 0 ? newGame(0) : startFromTitle(0)) });
   if (reachedSet().size > 1) items.push({ label: 'Choose level', act: () => { state.scene = 'select'; state.sel = i; } });
+  items.push({ label: 'Options', act: () => openOptions('title') });
   items.push({ label: 'Credits', act: () => toCredits() });
   return items;
 }
 
 function pauseItems() {
-  return ['Resume', 'Restart from torch', 'Restart level', `Sound: ${Audio.muted ? 'Off' : 'On'}`, 'Quit to title'];
+  return ['Resume', 'Restart from torch', 'Restart level', `Sound: ${Audio.muted ? 'Off' : 'On'}`, 'Options', 'Quit to title'];
+}
+
+// ---------------------------------------------------------------- options
+// state.opts = { from: 'title' | 'pause', page: 'main' | 'keys', back: sel to restore, remap: action | null }
+const ACTIONS = [['jump', 'Jump'], ['drip', 'Drip wax'], ['soak', 'Soak blob']];
+
+function openOptions(from) {
+  state.opts = { from, page: 'main', back: state.sel, remap: null };
+  state.sel = 0;
+}
+function closeOptions() {
+  Input.captureKey(null);
+  state.sel = state.opts.back;
+  state.opts = null;
+}
+function setOption(key, value) {
+  Settings.set(key, value);
+  if (key === 'gentle') {
+    // takes effect at once; a level touched by gentle wax counts as a gentle run
+    state.player.assist = Settings.assist();
+    if (value && state.scene === 'play' && state.levelStats) state.levelStats.gentle = true;
+  }
+}
+
+function optionItems() {
+  const s = Settings.get(), on = (v) => (v ? 'On' : 'Off');
+  if (state.opts.page === 'keys') {
+    const items = ACTIONS.map(([a, name]) => ({
+      label: state.opts.remap === a ? `${name}: press a key…` : `${name}: ${s.keys[a].map(keyName).join(' / ')}`,
+      act: () => startRemap(a),
+      info: state.opts.remap === a ? `Press the new key for ${name.toLowerCase()}  ·  Esc cancels` : 'Choose a row, then press the new key. Arrows and A/D always move.',
+    }));
+    items.push({ label: 'Reset to defaults', act: () => { Settings.resetKeys(); UI.toast('Keys reset', 1.4); },
+      info: 'Space / ↑ / W jump,  ↓ / S / X drip,  E soak.' });
+    items.push({ label: 'Back', act: () => { state.opts.page = 'main'; state.sel = 4; } });
+    return items;
+  }
+  return [
+    { label: `Gentle wax: ${on(s.gentle)}`, toggle: () => setOption('gentle', !s.gentle),
+      info: 'Wax burns slower, moths steal less, rain takes longer. No swift or bright medals.' },
+    { label: `Speedrun timer: ${on(s.timer)}`, toggle: () => setOption('timer', !s.timer), info: 'A level clock in the corner.' },
+    { label: `Screen shake: ${on(s.shake)}`, toggle: () => setOption('shake', !s.shake), info: 'Camera shake on landings, moths and doors.' },
+    { label: `Flashes: ${s.reduceFlash ? 'Reduced' : 'Full'}`, toggle: () => setOption('reduceFlash', !s.reduceFlash),
+      info: 'Softens the torch flash and lightning, for light-sensitive eyes.' },
+    { label: 'Controls', act: () => { state.opts.page = 'keys'; state.sel = 0; }, info: 'Change the keyboard keys for jump, drip and soak.' },
+    { label: 'Back', act: closeOptions },
+  ];
+}
+
+function startRemap(action) {
+  state.opts.remap = action;
+  if (Input.lastDevice !== 'keyboard') UI.toast('Press a key on the keyboard', 1.8);
+  const arm = () => Input.captureKey((code) => {
+    if (!state.opts || state.opts.remap !== action) return;
+    if (code === 'Escape') { state.opts.remap = null; Audio.sfx('menu'); return; }
+    if (!Settings.bind(action, code)) { UI.toast(`${keyName(code)} is kept for moving and menus`, 1.8); Audio.sfx('dripFail'); arm(); return; }
+    state.opts.remap = null;
+    Audio.sfx('select');
+  });
+  arm();
+}
+
+function updateOptions() {
+  const o = state.opts;
+  if (o.remap) {
+    // waiting for a key; a pad's back button or a tap cancels
+    if (input.backPressed || state.tap) { state.tap = null; Input.captureKey(null); o.remap = null; Audio.sfx('menu'); }
+    return;
+  }
+  const items = optionItems();
+  if (state.sel >= items.length) state.sel = 0;
+  if (input.backPressed || input.pausePressed) {
+    Audio.sfx('menu');
+    if (o.page === 'keys') { o.page = 'main'; state.sel = 4; } else closeOptions();
+    return;
+  }
+  const it = items[state.sel];
+  if (it && it.toggle && (input.leftPressed || input.rightPressed)) { it.toggle(); Audio.sfx('menu'); return; }
+  const c = navMenu(items.length);
+  if (c < 0) return;
+  if (items[c].toggle) items[c].toggle();
+  else items[c].act();
+}
+
+function drawOptions() {
+  const items = optionItems();
+  const o = state.opts;
+  UI.drawMenu(ctx, o.page === 'keys' ? 'Controls' : 'Options', items.map((i) => i.label), state.sel, {
+    top: H * 0.2, backdrop: o.from === 'title' ? 'rgba(14,6,28,0.8)' : undefined,
+    footer: (items[state.sel] && items[state.sel].info) || '',
+  });
 }
 
 // Generic menu navigation. Returns the chosen index or -1.
@@ -407,6 +521,7 @@ function update(dt) {
   state.time += dt;
   UI.update(dt);
   if (input.mutePressed) Audio.toggleMute();
+  if (state.opts) { updateOptions(); return; }
 
   if (state.scene === 'title') {
     if (state.intro) { state.tap = null; return; }   // presses belong to the intro (skip)
@@ -414,6 +529,7 @@ function update(dt) {
       if (input.anyPressed || state.tap) {
         state.tap = null;
         state.titleMenu = true;
+        state.titleMenuAt = state.time;
         state.sel = 0;
         Audio.init();
         Audio.music('title');
@@ -468,17 +584,19 @@ function update(dt) {
   const { world, player, camera } = state;
   if (state.paused) {
     if (state.rotateBlock) return;
+    Audio.heartbeat(1, false);
     if (input.pausePressed || input.backPressed) { state.paused = false; return; }
-    const c = navMenu(5);
+    const c = navMenu(6);
     if (c === 0) state.paused = false;
     else if (c === 1) { respawn(); state.paused = false; }
     else if (c === 2) { startLevel(state.levelIndex); }
     else if (c === 3) Audio.toggleMute();
-    else if (c === 4) toTitle();
+    else if (c === 4) openOptions('pause');
+    else if (c === 5) toTitle();
     return;
   }
   state.tap = null;
-  if (input.pausePressed) { state.paused = true; state.sel = 0; Audio.setFlame(0, false); return; }
+  if (input.pausePressed) { state.paused = true; state.sel = 0; Audio.setFlame(0, false); Audio.heartbeat(1, false); return; }
   if (state.hitStop > 0) { state.hitStop--; return; }
 
   if (input.restartPressed && !state.completeTimer) respawn();
@@ -567,6 +685,7 @@ function update(dt) {
   if (player.alive) state.iris = Math.min(1, state.iris + dt * 3);
   Audio.setFlame(player.waxFrac(), player.alive);
   Audio.setTempo(player.waxFrac());
+  Audio.heartbeat(player.waxFrac(), player.alive && !state.completeTimer);
 }
 
 // ---------------------------------------------------------------- render
@@ -576,8 +695,11 @@ function render() {
   const t = state.time;
   if (state.scene === 'title') {
     UI.drawTitle(ctx, t, Input.lastDevice, {
-      menu: state.titleMenu ? titleItems().map((it) => it.label) : null, selected: state.sel, standalone: state.standalone,
+      menu: state.titleMenu && !state.opts ? titleItems().map((it) => it.label) : null, selected: state.sel, standalone: state.standalone,
+      menuT: t - (state.titleMenuAt ?? -1),
+      overlay: !!state.opts,
     });
+    if (state.opts) drawOptions();
   } else if (state.scene === 'select') {
     UI.drawSelect(ctx, t, LEVELS, reachedSet(), state.sel, Input.lastDevice, selectMarks());
   } else if (state.scene === 'story') {
@@ -645,7 +767,8 @@ function renderPlay(t) {
     ctx.save();
     ctx.globalCompositeOperation = 'lighter';
     const big = world.data.finale && world.goal.lit;
-    ctx.fillStyle = `rgba(255,150,70,${Math.min(0.5, state.flash * (big ? 0.35 : 0.18))})`;
+    const soft = Settings.get().reduceFlash ? 0.25 : 1;
+    ctx.fillStyle = `rgba(255,150,70,${Math.min(0.5, state.flash * (big ? 0.35 : 0.18)) * soft})`;
     ctx.fillRect(0, 0, W, H);
     ctx.restore();
   }
@@ -654,7 +777,8 @@ function renderPlay(t) {
     const k = Math.min(1, world.goal.litTime / 2);
     ctx.save();
     ctx.globalCompositeOperation = 'lighter';
-    ctx.fillStyle = `rgba(255,140,60,${0.25 * k * (0.8 + 0.2 * Math.sin(t * 4))})`;
+    const pulse = Settings.get().reduceFlash ? 0.8 : 0.8 + 0.2 * Math.sin(t * 4);
+    ctx.fillStyle = `rgba(255,140,60,${0.25 * k * pulse})`;
     ctx.fillRect(0, 0, W, H);
     ctx.restore();
   }
@@ -663,6 +787,9 @@ function renderPlay(t) {
   UI.drawHUD(ctx, player, t, {
     muted: Audio.muted, touch: Input.lastDevice === 'touch', fail: state.hudFail,
     keepsake: world.keepsake ? !!world.keepsake.got : null, keepsakePop: state.keepsakePop,
+    timer: Settings.get().timer ? state.levelStats.time : null,
+    runTimer: Settings.get().timer && state.stats.time > state.levelStats.time + 0.5 ? state.stats.time : null,
+    timerGentle: state.levelStats.gentle,
   });
   if (state.levelCard > 0) UI.drawLevelCard(ctx, world, state.levelIndex, CFG.LEVEL_CARD_TIME - state.levelCard);
   if (state.completeTimer > 0) {
@@ -674,9 +801,12 @@ function renderPlay(t) {
   if (state.iris < 1) Post.iris(ctx, state.iris, player.cx - cam.x, player.y + player.h / 2 - cam.y);
   if (state.paused && !state.rotateBlock) {
     const g = UI.glyphs(Input.lastDevice);
-    UI.drawMenu(ctx, 'Paused', pauseItems(), state.sel, {
-      footer: Input.lastDevice === 'touch' ? '' : `${g.restart} restart from torch  ·  M mute`,
-    });
+    if (state.opts) drawOptions();
+    else {
+      UI.drawMenu(ctx, 'Paused', pauseItems(), state.sel, {
+        top: H * 0.24, footer: Input.lastDevice === 'touch' ? '' : `${g.restart} restart from torch  ·  M mute`,
+      });
+    }
   }
   if (DEBUG) {
     ctx.font = '12px monospace'; ctx.fillStyle = '#fff'; ctx.textAlign = 'left'; ctx.textBaseline = 'top';
@@ -716,8 +846,15 @@ function playReplay() {
     const lvl = state.levelIndex;
     update(CFG.STEP);
     r.i++;
-    if (state.scene !== 'play' || state.levelIndex !== lvl) { r.finished = true; state.replay = null; return; }
+    if (state.scene !== 'play' || state.levelIndex !== lvl) { r.finished = true; state.replay = null; endReplaySettings(); return; }
   }
+}
+
+// replays always run on default settings (gentle off, default keys), whatever is saved
+function endReplaySettings() {
+  Settings.force(false);
+  state.player.assist = Settings.assist();
+  if (state.levelStats) state.levelStats.gentle = Settings.get().gentle;
 }
 
 // ---------------------------------------------------------------- loop
@@ -770,9 +907,11 @@ if (params.has('level')) {
   }
 }
 window.WICK = {
-  state, LEVELS, startLevel, Lighting, Audio, records: loadRecords,
+  state, LEVELS, startLevel, Lighting, Audio, Settings, records: loadRecords,
   // restart `level` and drive it with recorded inputs from the very first frame
   replay(level, frames, speed = 1) {
+    if (state.opts) closeOptions();
+    Settings.force(true);
     newGame(level);
     state.replay = { frames: Int8Array.from(frames), i: 0, speed, finished: false };
     return true;

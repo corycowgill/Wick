@@ -55,7 +55,7 @@ export function drawWick(ctx, p, time, opts = {}) {
   face.lookY += (ty - face.lookY) * Math.min(1, dt * 10);
   const sleepy = clamp((face.still - 5) / 1.5, 0, 1);
 
-  const wet = p.alive ? clamp(p.wetTime / CFG.WATER_KILL_TIME, 0, 1) : (p.deathReason === 'water' ? 1 : 0);
+  const wet = p.alive ? clamp(p.wetTime / (p.assist ? p.assist.waterTime : CFG.WATER_KILL_TIME), 0, 1) : (p.deathReason === 'water' ? 1 : 0);
   if (wet > 0.15) ctx.translate(Math.sin(time * 70) * wet * 1.2, 0);   // shivering in the drip
   const body = mix(WAX, WET, wet * 0.8), shade = mix(WAX_SHADE, WET_SHADE, wet * 0.8);
   const moving = p.onGround && Math.abs(p.vx) > 20;

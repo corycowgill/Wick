@@ -4,6 +4,7 @@
 // bulbs, flames and windows glow through the dark the way real lights would.
 import { CFG, clamp } from '../config.js';
 import { EMITTER } from '../physics.js';
+import { Settings } from '../settings.js';
 
 const W = CFG.VIEW_W, H = CFG.VIEW_H, T = CFG.TILE;
 let glows = [];            // [x, y, r, 'r,g,b', a] in screen space, drawn after the darkness
@@ -58,11 +59,12 @@ function drawLightningSky(ctx, cam, world, time) {
   const s = state(world);
   if (s.bolt <= 0) return;
   const k = s.bolt;
+  const soft = Settings.get().reduceFlash ? 0.2 : 1;   // photosensitivity option
   ctx.save();
-  ctx.fillStyle = `rgba(200,215,255,${0.35 * k})`;
+  ctx.fillStyle = `rgba(200,215,255,${0.35 * k * soft})`;
   ctx.fillRect(0, 0, W, H);
   // a forked bolt, re-seeded per strike
-  ctx.strokeStyle = `rgba(235,240,255,${Math.min(1, k * 1.6)})`;
+  ctx.strokeStyle = `rgba(235,240,255,${Math.min(1, k * 1.6) * (soft < 1 ? 0.5 : 1)})`;
   ctx.lineWidth = 2.5;
   ctx.beginPath();
   let x = W * s.boltX, y = 0;
@@ -809,7 +811,7 @@ export function drawThemeOverlay(ctx, world, time, th) {
   if (th.name === 'rain') {
     const s = state(world);
     if (s.bolt > 0) {
-      ctx.fillStyle = `rgba(210,220,255,${0.16 * s.bolt})`;
+      ctx.fillStyle = `rgba(210,220,255,${0.16 * s.bolt * (Settings.get().reduceFlash ? 0.2 : 1)})`;
       ctx.fillRect(0, 0, W, H);
     }
   }

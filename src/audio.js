@@ -10,6 +10,7 @@ let tempoFrac = 1;
 let schedTimer = null;
 let nextNote = 0, step = 0, bar = 0;
 let lastSteam = 0;
+let nextBeat = 0;               // low-wax heartbeat: when the next lub-dub is due (0 = idle)
 
 // generated samples (see tools/gen_audio.py)
 const SAMPLE_FILES = [
@@ -245,6 +246,22 @@ export const Audio = {
     flame.g.gain.setTargetAtTime(level, t, 0.15);
     flame.bp.frequency.setTargetAtTime(380 + 900 * frac, t, 0.2);
     flame.lfo.frequency.setTargetAtTime(1.5 + 3 * frac, t, 0.3);
+  },
+
+  // Low-wax cue: a soft lub-dub under 20% wax, quickening as the wax runs out.
+  // Called every play frame; beats are only scheduled when due, so pausing,
+  // dying, refilling or muting stops it at once.
+  heartbeat(frac, active = true) {
+    if (!ctx || muted || !active || frac >= 0.2 || ctx.state !== 'running') { nextBeat = 0; return; }
+    const t = now();
+    if (nextBeat === 0) nextBeat = t + 0.25;
+    if (t < nextBeat) return;
+    const k = 1 - Math.max(0, frac) / 0.2;        // 0 at 20% wax .. 1 when empty
+    const vol = 0.09 + 0.05 * k;
+    tone('sine', 72, 46, 0.16, vol, sfxBus, t, 0.012);
+    tone('sine', 64, 42, 0.14, vol * 0.7, sfxBus, t + 0.2, 0.012);
+    noise(0.07, 0.015 + 0.01 * k, 'lowpass', 260, 90, 0.7, t);
+    nextBeat = t + 1.15 - 0.5 * k;
   },
 
   setTempo(frac) {

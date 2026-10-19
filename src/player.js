@@ -1,10 +1,11 @@
 // Wick: the candle-cat. Wax is health, height, jump and light.
-import { CFG, lerp, clamp } from './config.js';
+import { CFG, NO_ASSIST, lerp, clamp } from './config.js';
 import { moveAndCollide, rectBlocked, isShelter, EMPTY } from './physics.js';
 import { Events } from './events.js';
 
 export class Player {
   constructor() {
+    this.assist = NO_ASSIST;   // gentle-wax multipliers, set by the game from the options
     this.spawn(64, 64, CFG.WAX_MAX);
   }
 
@@ -110,7 +111,7 @@ export class Player {
     if (wind !== 0) {
       this.windVx = clamp(this.windVx + wind * dt, -CFG.WIND_MAX, CFG.WIND_MAX);
       this.flicker = CFG.WIND_FLICKER;
-      this.wax -= CFG.WIND_DRAIN * dt;
+      this.wax -= CFG.WIND_DRAIN * this.assist.drain * dt;
     } else {
       this.windVx = approach(this.windVx, 0, (this.onGround ? 1000 : 430) * dt);
       this.flicker = Math.max(0, this.flicker - dt * 0.5);
@@ -186,7 +187,7 @@ export class Player {
 
     // --- burning: wax drain ---
     const moving = Math.abs(mx) > 0.01 && Math.abs(this.vx) > 15;
-    this.wax -= (moving ? CFG.DRAIN_MOVE : CFG.DRAIN_IDLE) * dt;
+    this.wax -= (moving ? CFG.DRAIN_MOVE : CFG.DRAIN_IDLE) * this.assist.drain * dt;
 
     // --- abilities ---
     if (input.dripPressed) {
@@ -211,7 +212,7 @@ export class Player {
       const m = world.mothHit(this);
       if (m) {
         const dir = this.cx >= m.x ? 1 : -1;
-        this.wax -= CFG.MOTH_STEAL;
+        this.wax -= CFG.MOTH_STEAL * this.assist.steal;
         this.hurt = CFG.MOTH_INVULN;
         this.windVx = dir * 230;
         this.vy = Math.min(this.vy, -380);
@@ -232,7 +233,7 @@ export class Player {
         const f = this.flamePos();
         Events.emit('steam', { x: f.x, y: f.y });
       }
-      if (this.wetTime >= CFG.WATER_KILL_TIME) this.kill('water');
+      if (this.wetTime >= this.assist.waterTime) this.kill('water');
     } else {
       this.wetTime = Math.max(0, this.wetTime - dt * 1.5);
     }
