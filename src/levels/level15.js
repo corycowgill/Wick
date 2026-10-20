@@ -5,7 +5,7 @@
 export default {
   name: "Gale Locks",
   hint: "Wax holds fast. The wind carries.",
-  par: {"time":40,"wax":17},
+  par: {"time":40,"wax":43},
   theme: "wind",
   scene: "locks",
   ambient: 0.84,

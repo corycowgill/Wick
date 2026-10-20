@@ -7,6 +7,7 @@ import { EMITTER } from '../physics.js';
 import { Settings } from '../settings.js';
 import { skyline } from './lighting.js';
 import { Post } from './post.js';
+import { skyMask, buildMoon } from './backdrop.js';
 
 const W = CFG.VIEW_W, H = CFG.VIEW_H, T = CFG.TILE;
 let glows = [];            // [x, y, r, 'r,g,b', a] in screen space, drawn after the darkness
@@ -28,6 +29,13 @@ export function drawThemeSky(ctx, cam, world, time, th, lift) {
   skyCam = cam; skyLift = lift;
   if (th.name === 'rain') drawLightningSky(ctx, cam, world, time);
   if (th.name === 'fair') drawFireworksSky(ctx, world, time);
+}
+
+// how brightly distant lightning is lighting the clouds right now (0..1)
+export function skyFlash(world) {
+  const s = fx.get(world);
+  if (!s || s.bolt <= 0) return 0;
+  return s.bolt * (Settings.get().reduceFlash ? 0.2 : 1);
 }
 
 function drawAurora(ctx, cam, time, lift) {
@@ -244,7 +252,7 @@ function drawCanalBridges(ctx, cam, time, lift) {
   for (let i = Math.floor(off / span) - 1; i < Math.floor(off / span) + 3; i++) {
     const x = i * span - off + 60, w = 300;
     // far arches are near-black silhouettes against the sky, so the pale quay reads in front
-    ctx.fillStyle = '#0c1228';
+    ctx.fillStyle = '#121a36';
     ctx.beginPath();
     ctx.moveTo(x, base - 90); ctx.lineTo(x + w, base - 90); ctx.lineTo(x + w, base);
     ctx.arc(x + w / 2, base, w * 0.36, 0, Math.PI, true);
@@ -663,13 +671,12 @@ function drawLocks(ctx, cam, world, time, lift) {
 }
 
 // Moth Mill: a low moon, and the mill's great lantern with moths circling it
+let bigMoon = null;
 function drawMothMoon(ctx, cam, world, time, lift) {
   const mx = wrap(W * 0.66 - cam.x * 0.05, W + 400) - 200, my = 150 + lift * 0.03;
-  ctx.fillStyle = '#f2e2f2';
-  ctx.beginPath(); ctx.arc(mx, my, 64, 0, 6.283); ctx.fill();
-  ctx.fillStyle = 'rgba(190,160,200,0.4)';
-  ctx.beginPath(); ctx.arc(mx - 18, my - 10, 11, 0, 6.283); ctx.arc(mx + 20, my + 16, 8, 0, 6.283); ctx.arc(mx + 8, my - 24, 5, 0, 6.283); ctx.fill();
-  glow(mx, my, 200, '230,200,255', 0.1);
+  if (!bigMoon) bigMoon = buildMoon('#e6c8ff', 64, 260);
+  ctx.drawImage(bigMoon, mx - 260, my - 260);
+  glow(mx, my, 200, '230,200,255', 0.08);
   for (let k = 0; k < 3; k++) {
     const u = wrap(time * 0.05 + k * 0.33, 1);
     drawMothShape(ctx, mx - 150 + u * 300, my - 30 + Math.sin(u * 9 + k) * 30 + k * 18, 5, time * 18 + k, '#2a1440');
@@ -985,32 +992,13 @@ function clipToSky(ctx, cam, world) {
 
 // The aurora at half resolution, cut to the open sky by a tile-res mask that is
 // smoothed on upscale, so where a roof (even an unlit one) hides it, it melts away.
-let aur = null, actx = null, smask = null, sctx = null, simg = null;
+let aur = null, actx = null;
 function drawAuroraMasked(ctx, cam, world, time, lift) {
   if (!aur) {
     aur = document.createElement('canvas'); aur.width = W / 2; aur.height = H / 2; actx = aur.getContext('2d');
   }
-  const top = skyline(world);
-  const x0 = Math.floor(cam.x / T) - 1, y0 = Math.floor(cam.y / T) - 1;
-  const cw = Math.ceil(W / T) + 3, ch = Math.ceil(H / T) + 3;
-  if (!smask || smask.width !== cw || smask.height !== ch) {
-    smask = document.createElement('canvas'); smask.width = cw; smask.height = ch;
-    sctx = smask.getContext('2d'); simg = sctx.createImageData(cw, ch);
-  }
-  const d = simg.data;
-  let any = false;
-  // open sky per cell, softened sideways by a 1-2-1 blur across columns
-  const sky = (i, j) => (y0 + j < top[clamp(x0 + i, 0, world.w - 1)] ? 255 : 0);
-  for (let i = 0; i < cw; i++) {
-    for (let j = 0; j < ch; j++) {
-      const o = (j * cw + i) * 4;
-      const a = (sky(i - 1, j) + 2 * sky(i, j) + sky(i + 1, j)) >> 2;
-      d[o] = d[o + 1] = d[o + 2] = 255; d[o + 3] = a;
-      if (a) any = true;
-    }
-  }
-  if (!any) return;
-  sctx.putImageData(simg, 0, 0);
+  const m = skyMask(world, cam, skyline(world));
+  if (!m) return;
   actx.setTransform(1, 0, 0, 1, 0, 0);
   actx.globalCompositeOperation = 'source-over';
   actx.clearRect(0, 0, aur.width, aur.height);
@@ -1018,7 +1006,7 @@ function drawAuroraMasked(ctx, cam, world, time, lift) {
   drawAurora(actx, cam, time, lift);
   actx.globalCompositeOperation = 'destination-in';
   actx.imageSmoothingEnabled = true;
-  actx.drawImage(smask, x0 * T - cam.x, y0 * T - cam.y, cw * T, ch * T);
+  actx.drawImage(m.canvas, m.x, m.y, m.w, m.h);
   ctx.save();
   ctx.globalCompositeOperation = 'lighter';
   ctx.globalAlpha = 0.6;

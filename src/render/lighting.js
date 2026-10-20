@@ -1,6 +1,7 @@
 // Lighting: an indigo darkness layer with light holes cut by radial gradients
 // (destination-out), drawn over the world, then warm additive bloom.
 import { CFG, clamp } from '../config.js';
+import { cutTownLights } from './backdrop.js';
 
 const T = CFG.TILE;
 let layer = null, lctx = null;
@@ -65,6 +66,40 @@ function darkStrength(world) {
   return s;
 }
 
+// Open sky well above the skyline is lifted out of the ambient dark, so the painted
+// backdrop and moon read; it ramps in from three tiles above the nearest roof or
+// ledge over seven, so the space Wick plays in keeps its full darkness and light contrast.
+let rmask = null, rctx = null, rimg = null;
+function drawSkyRelief(world, vx, vy, W, H, amount) {
+  const top = skyline(world);
+  const x0 = Math.floor(vx / T) - 1, y0 = Math.floor(vy / T) - 1;
+  const cw = Math.ceil(W / T) + 3, ch = Math.ceil(H / T) + 3;
+  if (!rmask || rmask.width !== cw || rmask.height !== ch) {
+    rmask = document.createElement('canvas');
+    rmask.width = cw; rmask.height = ch;
+    rctx = rmask.getContext('2d');
+    rimg = rctx.createImageData(cw, ch);
+  }
+  const d = rimg.data, { w } = world;
+  let seen = false;
+  for (let i = 0; i < cw; i++) {
+    let ts = world.h;
+    for (let k = -2; k <= 2; k++) ts = Math.min(ts, top[clamp(x0 + i + k, 1, w - 2)]);
+    for (let j = 0; j < ch; j++) {
+      const a = clamp((ts - (y0 + j) - 2.5) / 7, 0, 1);
+      const o = (j * cw + i) * 4;
+      d[o + 3] = a * amount * 255;
+      if (a > 0) seen = true;
+    }
+  }
+  if (!seen) return;
+  rctx.putImageData(rimg, 0, 0);
+  lctx.globalCompositeOperation = 'destination-out';
+  lctx.imageSmoothingEnabled = true;
+  lctx.drawImage(rmask, x0 * T - vx, y0 * T - vy, cw * T, ch * T);
+  lctx.globalCompositeOperation = 'source-over';
+}
+
 let mask = null, mctx = null, mimg = null;
 function drawDarkMask(world, vx, vy, W, H) {
   const s = darkStrength(world);
@@ -98,6 +133,8 @@ function drawDarkMask(world, vx, vy, W, H) {
 export const Lighting = {
   scale: 0.5,          // darkness layer resolution relative to the view
   bloom: true,
+  skyRelief: 0.42,
+  townLights: true,     // how much of the ambient dark lifts off the open sky
   desaturate: true,
 
   setScale(s) {
@@ -135,10 +172,13 @@ export const Lighting = {
     g.addColorStop(1, `rgba(16,8,34,${Math.min(0.97, amb * 1.03)})`);
     lctx.fillStyle = g;
     lctx.fillRect(0, 0, W, H);
+    if (this.skyRelief > 0) drawSkyRelief(world, vx, vy, W, H, this.skyRelief);
 
     // dark zones go nearly opaque, feathered at their edges and faded out above
     // the skyline so they never slice the sky (a tile-res mask, smoothed on upscale)
     drawDarkMask(world, vx, vy, W, H);
+    // the far town's lit windows shine through the dark (open sky only)
+    if (this.townLights) cutTownLights(lctx, world, { x: vx, y: vy }, skyline(world), 0.85);
 
     // cut the light holes
     lctx.globalCompositeOperation = 'destination-out';

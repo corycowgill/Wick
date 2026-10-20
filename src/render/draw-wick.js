@@ -24,6 +24,13 @@ export function wickMood(kind, dur = 1) {
 }
 export function wickNudge() { nudged = true; }
 export function wickKnead(dur = 3) { kneadUntil = face.now + dur; }
+// back at the torch: the flame re-forms from nothing with a little overshoot
+let igniteAt = -9;
+export function wickReignite(delay = 0) { igniteAt = face.now + delay; }
+function igniteScale(time) {
+  const k = clamp((time - igniteAt) / 0.28, 0, 1);
+  return k >= 1 ? 1 : k * k * (1 + 2.2 * (1 - k));   // ease out, peaking a little past full
+}
 // how loudly the play Wick is purring (0..1), for Audio.purr
 let purring = 0;
 export function wickPurr() { return purring; }
@@ -49,6 +56,7 @@ function catOf(p) {
       chatter: 0, nextChatter: 0, flick: 0, flickSide: 1, nextFlick: 3,
       slit: 0, wide: 0, lookX: 0, lookY: 0, mothD: 1e9, mothDx: 0, torchDx: 0, torchNear: false, purr: 0,
       yawned: false,
+      flLean: 0, flLeanV: 0, flStretch: 0, flStretchV: 0, flGround: true, flAirVy: 0,
     };
     c.rel[0] = -2.95;
     for (let i = 1; i < TAIL_N; i++) c.rel[i] = 0.3;
@@ -216,7 +224,27 @@ function think(c, p, time, dt, opts) {
   ease(c, dt, 'purr', purr, 3);
   if (world) purring = c.purr;
 
+  flameSpring(c, p, time, dt);
   tail(c, p, time, dt, mood);
+}
+
+// The flame as a springy streamer, in world terms (+lean = tip toward +x): it trails the run,
+// stretches up on a fall and squashes on the rise, overshoots when Wick stops or lands, and
+// whips about in a gust.
+function flameSpring(c, p, time, dt) {
+  const vx = (p.vx || 0) + (p.windVx || 0), vy = p.vy || 0;
+  let lean = clamp(-vx / CFG.RUN_SPEED, -1.4, 1.4) * 1.05;
+  if (Math.abs(p.windVx || 0) > 70) lean += Math.sin(time * 13) * 0.25 + Math.sin(time * 29) * 0.12;
+  let stretch = vy > 0 ? clamp((vy - 120) / 900, 0, 1.2) : clamp(vy / 1400, -0.45, 0);
+  if (p.onGround) stretch -= Math.min(1, Math.abs(vx) / CFG.RUN_SPEED) * 0.18;   // flattened back by the run
+  if (!p.onGround && vy > 0 && vy < 160) stretch -= 0.12;          // the little hang at the apex
+  if (p.onGround && !c.flGround) c.flStretchV -= clamp(c.flAirVy / 120, 0, 9);   // landing: squash down, spring back
+  c.flGround = !!p.onGround;
+  if (!p.onGround) c.flAirVy = vy;
+  spring(c, 'flLean', 'flLeanV', lean, 190, 11, dt);
+  spring(c, 'flStretch', 'flStretchV', stretch, 240, 13, dt);
+  c.flLean = clamp(c.flLean, -1.6, 1.6);
+  c.flStretch = clamp(c.flStretch, -0.5, 1.3);
 }
 
 // The tail: a chain of segments, each springing to its pose angle, kicked by the body's
@@ -607,12 +635,12 @@ export function drawWick(ctx, p, time, opts = {}) {
   ctx.strokeStyle = OUTLINE; ctx.lineWidth = 2;
   ctx.beginPath(); ctx.moveTo(1, top + 1); ctx.lineTo(1.5, top - 5); ctx.stroke();
 
-  // flame
+  // flame: Wick's hair. It streams behind the run, stretches into a ribbon on a fast fall,
+  // whips forward on landing, gutters in a gust, and its colour and size read the wax.
   if (p.alive) {
-    const lean = clamp(-(p.vx + (p.windVx || 0)) / CFG.RUN_SPEED, -1.2, 1.2) * facing;
     const flick = 1 + Math.sin(time * 31) * 0.06 + Math.sin(time * 17.3) * 0.05 + (p.flicker || 0) * Math.sin(time * 53);
-    const size = (6 + 7 * frac) * flick * (1 - wet * 0.75);
-    drawFlame(ctx, 1.5, top - 5, size, lean * 0.6 - c.lean * 2, time);
+    const size = (6 + 7 * frac) * flick * (1 - wet * 0.75) * (opts.world ? igniteScale(time) : 1);
+    if (size > 0.4) drawFlame(ctx, 1.5, top - 5, size, c.flLean * facing - c.lean * 2, time, { stretch: c.flStretch, frac, wet, gust: gusty ? 1 : 0 });
   }
   ctx.restore();
   if (sleepy >= 1) {
@@ -630,21 +658,69 @@ export function drawWick(ctx, p, time, opts = {}) {
   ctx.restore();
 }
 
-export function drawFlame(ctx, x, y, size, lean = 0, time = 0) {
-  const tipX = x + lean * size * 0.9 + Math.sin(time * 23) * size * 0.08;
-  const tipY = y - size * 2.1;
+// flame palettes by wax: [outer, middle, core]. Full wax burns tall and pale gold, low wax
+// a deep guttering red-orange, and a wet flame drowns toward a cold blue-white.
+const FLAME_HI = [[255, 122, 34], [255, 196, 70], [255, 250, 214]];
+const FLAME_MID = [[255, 106, 26], [255, 174, 52], [255, 241, 184]];
+const FLAME_LO = [[226, 58, 24], [255, 120, 40], [255, 196, 120]];
+const FLAME_WET = [[120, 150, 210], [180, 200, 235], [235, 242, 255]];
+const flameCol = [[0, 0, 0], [0, 0, 0], [0, 0, 0]];
+function flamePalette(frac, wet) {
+  const [a, b, k] = frac > 0.5 ? [FLAME_MID, FLAME_HI, (frac - 0.5) * 2] : [FLAME_LO, FLAME_MID, clamp((frac - 0.1) / 0.4, 0, 1)];
+  for (let i = 0; i < 3; i++) for (let j = 0; j < 3; j++) {
+    const v = a[i][j] + (b[i][j] - a[i][j]) * k;
+    flameCol[i][j] = v + (FLAME_WET[i][j] - v) * wet * 0.7;
+  }
+  return flameCol;
+}
+const rgb = (c) => `rgb(${c[0] | 0},${c[1] | 0},${c[2] | 0})`;
+
+// opts (all optional, so the HUD and title flames stay as they were): stretch (-0.5 squashed
+// .. 1.2 streaming up), frac (wax: palette and the blue root), wet, gust (0..1 guttering)
+export function drawFlame(ctx, x, y, size, lean = 0, time = 0, opts = null) {
+  const st = opts ? opts.stretch || 0 : 0;
+  const gust = opts ? opts.gust || 0 : 0;
+  const len = 1 + st * 0.9, thin = 1 / (1 + Math.max(0, st) * 0.45) * (1 - Math.min(0, st) * 0.3);
+  const wob = Math.sin(time * 23) * size * 0.08 + gust * Math.sin(time * 41) * size * 0.35;
+  const tipX = x + lean * size * 0.9 * (1 + Math.max(0, st) * 0.3) + wob;
+  const tipY = y - size * 2.1 * len;
+  const w = size * thin;
   const layer = (s, color) => {
     ctx.fillStyle = color;
     ctx.beginPath();
-    ctx.moveTo(x - size * 0.75 * s, y - size * 0.25);
-    ctx.quadraticCurveTo(x - size * 0.8 * s, y - size * 1.1 * s, x + (tipX - x) * s, y - (y - tipY) * s);
-    ctx.quadraticCurveTo(x + size * 0.8 * s, y - size * 1.1 * s, x + size * 0.75 * s, y - size * 0.25);
-    ctx.arc(x, y - size * 0.25, size * 0.75 * s, 0, Math.PI);
+    ctx.moveTo(x - w * 0.75 * s, y - size * 0.25);
+    ctx.quadraticCurveTo(x - w * 0.8 * s + (tipX - x) * 0.25 * s, y - size * 1.1 * s * len, x + (tipX - x) * s, y - (y - tipY) * s);
+    ctx.quadraticCurveTo(x + w * 0.8 * s + (tipX - x) * 0.25 * s, y - size * 1.1 * s * len, x + w * 0.75 * s, y - size * 0.25);
+    ctx.arc(x, y - size * 0.25, w * 0.75 * s, 0, Math.PI);
     ctx.fill();
   };
-  layer(1, '#ff6a1a');
-  layer(0.72, '#ffae34');
-  layer(0.42, '#fff1b8');
+  if (!opts) {
+    layer(1, '#ff6a1a');
+    layer(0.72, '#ffae34');
+    layer(0.42, '#fff1b8');
+    return;
+  }
+  const pal = flamePalette(opts.frac ?? 0.7, opts.wet || 0);
+  layer(1, rgb(pal[0]));
+  // streaming: a lick tearing off above the tip on a fast fall or in a gust
+  const tear = Math.max(Math.max(0, st - 0.35) / 0.85, gust * 0.6);
+  if (tear > 0.02) {
+    const ph = (time * 5.5) % 1;
+    const lx = tipX + (tipX - x) * 0.3 * ph, ly = tipY - size * (0.25 + ph * 1.3 * (0.5 + tear));
+    const r = size * 0.32 * (1 - ph) * Math.min(1, tear * 1.5);
+    if (r > 0.3) {
+      ctx.fillStyle = rgb(pal[1]);
+      ctx.beginPath(); ctx.ellipse(lx, ly, r * 0.7, r * (1.2 + st * 0.6), 0, 0, Math.PI * 2); ctx.fill();
+    }
+  }
+  layer(0.72, rgb(pal[1]));
+  layer(0.42, rgb(pal[2]));
+  // the blue root of a healthy candle flame
+  const blue = clamp(((opts.frac ?? 0.7) - 0.35) / 0.4, 0, 1) * (1 - (opts.wet || 0));
+  if (blue > 0.05) {
+    ctx.fillStyle = `rgba(90,130,255,${0.4 * blue})`;
+    ctx.beginPath(); ctx.ellipse(x, y - size * 0.1, w * 0.36, size * 0.13, 0, 0, Math.PI * 2); ctx.fill();
+  }
 }
 
 // Drawn after the lighting, in world space: the parts of Wick that must read in the dark.

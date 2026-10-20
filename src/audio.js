@@ -12,6 +12,8 @@ let nextNote = 0, step = 0, bar = 0;
 let lastSteam = 0;
 let nextBeat = 0;               // low-wax heartbeat: when the next lub-dub is due (0 = idle)
 let pausedDuck = false;         // music muffled under the pause menu
+let sfxFilter = null;           // sfx muffle in dark zones
+let darkK = 0;                  // 0 in the open .. 1 deep in a dark zone
 
 // generated samples (see tools/gen_audio.py)
 const SAMPLE_FILES = [
@@ -264,7 +266,9 @@ export const Audio = {
     musicFilter.type = 'lowpass';
     musicFilter.frequency.value = 16000;
     musicFilter.connect(musicBus);
-    sfxBus.connect(comp); musicBus.connect(comp);
+    sfxFilter = ctx.createBiquadFilter();
+    sfxFilter.type = 'lowpass'; sfxFilter.frequency.value = 20000; sfxFilter.Q.value = 0.5;
+    sfxBus.connect(sfxFilter).connect(comp); musicBus.connect(comp);
     comp.connect(master).connect(ctx.destination);
     noiseBuf = ctx.createBuffer(1, ctx.sampleRate * 2, ctx.sampleRate);
     const d = noiseBuf.getChannelData(0);
@@ -344,8 +348,16 @@ export const Audio = {
     tempoFrac = Math.max(0, Math.min(1, frac));
     if (!ctx || !musicFilter) return;
     // music closes in as the flame shrinks
-    musicFilter.frequency.setTargetAtTime(musicState === 'play' ? 700 + 15000 * tempoFrac ** 1.6 : 16000, now(), 0.4);
+    musicFilter.frequency.setTargetAtTime(musicState === 'play' ? (700 + 15000 * tempoFrac ** 1.6) * (1 - 0.4 * darkK) : 16000, now(), 0.4);
     if (musicTrack) musicTrack.src.playbackRate.setTargetAtTime(musicState === 'play' ? 0.94 + 0.06 * tempoFrac : 1, now(), 0.5);
+  },
+
+  // dark zones close the world in: sfx (and the music, via setTempo) lose their top end
+  setDark(k) {
+    k = Math.max(0, Math.min(1, k));
+    if (!ctx || !sfxFilter || Math.abs(k - darkK) < 0.005) return;
+    darkK = k;
+    sfxFilter.frequency.setTargetAtTime(20000 * Math.pow(0.15, k), now(), 0.25);
   },
 
   // looping background ambience: 'rain' or null
@@ -497,6 +509,47 @@ export const Audio = {
         } else for (let i = 0; i < 6; i++) tone('triangle', 1300, 950, 0.03, 0.06, sfxBus, v + i * 0.06, 0.003);   // ek-ek-ek
         break;
       }
+      case 'step': {
+        // a footfall, by what is underfoot; quiet, and never twice the same
+        const v = (opts.vol ?? 1) * 0.9, j = 0.92 + Math.random() * 0.16;
+        switch (opts.surface) {
+          case 'wood':
+            tone('triangle', 200 * j, 140 * j, 0.05, 0.035 * v);
+            noise(0.04, 0.022 * v, 'bandpass', 900 * j, 600, 1.4);
+            break;
+          case 'grass':
+            noise(0.07, 0.03 * v, 'highpass', 3200 * j, 2200, 0.7);
+            noise(0.05, 0.012 * v, 'bandpass', 700 * j, 400, 1);
+            break;
+          case 'wet':
+            noise(0.06, 0.035 * v, 'bandpass', 1900 * j, 1200, 3);
+            tone('sine', 760 * j, 300, 0.05, 0.014 * v);
+            break;
+          case 'wax':
+            tone('sine', 250 * j, 170, 0.07, 0.035 * v);
+            noise(0.05, 0.012 * v, 'lowpass', 700, 250, 0.8);
+            break;
+          default:   // stone
+            noise(0.035, 0.03 * v, 'bandpass', 2300 * j, 1500, 1.6);
+            tone('sine', 190 * j, 120, 0.03, 0.016 * v);
+        }
+        break;
+      }
+      case 'thud': {
+        // the body of a landing, weighted by the drop
+        const h = opts.hard ?? 0.3;
+        tone('sine', 120, 40, 0.14 + 0.12 * h, 0.05 + 0.16 * h);
+        if (h > 0.4) noise(0.12 + 0.1 * h, 0.03 + 0.05 * h, 'lowpass', 500, 90, 0.8);
+        break;
+      }
+      case 'blobLand':
+        // a wax drop settling: a soft plop
+        tone('sine', 320, 120, 0.09, 0.05);
+        noise(0.06, 0.02, 'lowpass', 900, 200, 0.8);
+        break;
+      case 'skid':
+        noise(0.14, 0.025 * (opts.vol ?? 1), 'bandpass', 1400, 700, 1.2);
+        break;
       case 'menu':
         tone('triangle', 520, 520, 0.06, 0.07);
         break;

@@ -357,9 +357,25 @@ export function search(levelData, opts = {}) {
   const maxStates = opts.maxStates || (CLOCKED ? 200000 : 60000);
   let expanded = 0;
 
+  // firstHit stops at the first goal found, but that is often a long, wasteful final move (a 3-blob
+  // bridge into the goal) from a state a few tiles short, popped before the states that would just
+  // walk in. When recording (or with polish), keep going a little: up to POLISH more expansions, while
+  // the queue still holds states with more wax than the goal found (by wax order, nothing below can
+  // beat it short of a refill), so the route's finish wax is what the level really asks for.
+  const FIRST = opts.firstHit ?? (CLOCKED || PUZZLE);
+  const POLISH = opts.polish ?? (opts.record ? 3000 : 0);
+  const POLISH_NEAR = 10;
+  let polishEnd = -1;
   while (queue.length && expanded < maxStates) {
     const s = heapPop(queue);           // best-first: highest wax
     if (best.get(keyOf(s)) !== s || hopeless(s)) continue;
+    if (polishEnd >= 0) {
+      // (a torch target counts its refill: the states still queued are measured before it)
+      if (!PUZZLE && Math.min(CFG.WAX_MAX, s.wax + (opts.target === 'nextTorch' ? CFG.TORCH_REFILL : 0)) <= goalHit.wax + 0.5) break;
+      // the final approach is what is being polished: states far from where the goal was hit wait
+      // (puzzle levels queue by progress, not wax, so without this the budget goes on the start)
+      if (Math.abs(s.x - goalHit.x) > POLISH_NEAR * T || Math.abs(s.feet - goalHit.feet) > POLISH_NEAR * T) continue;
+    }
     expanded++;
 
     for (const [name, prog, cost] of progs) {
@@ -454,7 +470,10 @@ export function search(levelData, opts = {}) {
       push(ns);
     }
     // clocked levels have ~20x the states: best-first by wax, so the first goal is near the best anyway
-    if (goalHit && (opts.firstHit ?? (CLOCKED || PUZZLE))) break;
+    if (goalHit && FIRST) {
+      if (polishEnd < 0) polishEnd = expanded + POLISH;
+      if (expanded >= polishEnd) break;
+    }
   }
   Events.muted = false;
   // budgetHit: the search stopped at maxStates with states still queued (a miss is then not a proof)

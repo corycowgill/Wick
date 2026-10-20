@@ -44,6 +44,8 @@ function build() {
 
 export const Post = {
   quality: 1,     // 0 on slow devices: skips grain and shafts
+  journey: 0, night: null,
+  setJourney(p, n) { this.journey = p; this.night = n; },
 
   // world-level atmosphere: light shafts (under the HUD)
   shafts(ctx, cam, themeName, time) {
@@ -82,6 +84,17 @@ export const Post = {
       ctx.globalAlpha = gr[1] * 2.2;
       ctx.fillStyle = gr[0];
       ctx.fillRect(0, 0, W, H);
+      ctx.restore();
+    }
+    // the journey's grade over the theme's: early levels hold the warmth of dusk,
+    // the deep middle of the night cools, and the hour before dawn goes pale and cold
+    const n = this.night;
+    if (n) {
+      ctx.save();
+      ctx.globalCompositeOperation = 'soft-light';
+      const warm = 0.1 * (1 - n.night) * (1 - n.dawn), cool = 0.1 * n.night * (1 - n.dawn) + 0.06 * n.dawn;
+      if (warm > 0.005) { ctx.globalAlpha = warm; ctx.fillStyle = '#ff9a58'; ctx.fillRect(0, 0, W, H); }
+      if (cool > 0.005) { ctx.globalAlpha = cool; ctx.fillStyle = '#3a4a9a'; ctx.fillRect(0, 0, W, H); }
       ctx.restore();
     }
     ctx.drawImage(vignette, 0, 0, W, H);

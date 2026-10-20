@@ -5,7 +5,7 @@
 export default {
   name: "Market Row",
   hint: "Wax is your light. Reach the torch.",
-  par: {"time":45,"wax":36},
+  par: {"time":45,"wax":53},
   theme: "dusk",
   ambient: 0.76,
   dark: [[45,58]],

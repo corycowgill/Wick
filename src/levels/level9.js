@@ -5,7 +5,7 @@
 export default {
   name: "Hay Maze",
   hint: "Burn a path open.",
-  par: {"time":75,"wax":5},
+  par: {"time":75,"wax":48},
   theme: "barn",
   ambient: 0.88,
   torchFloors: [65,75],

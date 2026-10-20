@@ -5,7 +5,7 @@
 export default {
   name: "Firebreak",
   hint: "Light the right fuse.",
-  par: {"time":45,"wax":17},
+  par: {"time":45,"wax":43},
   theme: "harvest",
   scene: "scorch",
   ambient: 0.88,

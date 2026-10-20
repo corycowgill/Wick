@@ -46,12 +46,14 @@ LEVELS.forEach((L, i) => {
 section('Reachability bot (real Player physics; wind/water timing disabled)');
 // Tall levels are searched torch by torch, each segment going on from where the last one
 // lit its torch (a chained route is still a real route); the rest in one search.
+// polish: the bot tidies its final approach to each torch and the goal (see tests/bot.js), so the
+// wax it reports there is what the level asks, not a wasteful last move
 function reach(L) {
-  if (L.tiles.length <= 40) { const r = search(L, {}); return { ...r, segments: r.goal ? [r.goal] : [] }; }
+  if (L.tiles.length <= 40) { const r = search(L, { polish: 3000 }); return { ...r, segments: r.goal ? [r.goal] : [] }; }
   const segments = [];
   let cur = null, r = null, states = 0;
   for (let k = 0; k < 16 && !(cur && cur.complete); k++) {
-    r = search(L, { target: 'nextTorch', startState: cur });
+    r = search(L, { target: 'nextTorch', startState: cur, polish: 3000 });
     states += r.states;
     if (!r.goal) break;
     segments.push(cur = r.goal);
@@ -89,18 +91,18 @@ section('Wax management required (no-drip bot must fail)');
 }
 
 if (!QUICK) {
-  section('Torch to torch at the guaranteed respawn wax (per-torch floor; hazards on, as the floors are set)');
+  section('Torch to torch at the guaranteed respawn wax (per-torch floor, every pumpkin already eaten; hazards on)');
   for (let i = 0; i < LEVELS.length; i++) {
     const r = routes[i];
     if (!r) continue;
-    // order in which the optimal route lit torches, and pumpkins used before each
+    // order in which the optimal route lit torches
     const path = r.segments.flatMap((g) => pathOf(g));
     const order = [];
     let prev = path[0];
     for (const s of path) {
       if (s.tm !== prev.tm) {
         const idx = Math.log2(s.tm ^ prev.tm) | 0;
-        order.push({ idx, pm: s.pm });
+        order.push({ idx });
       }
       prev = s;
     }
@@ -108,7 +110,9 @@ if (!QUICK) {
     order.forEach((o, k) => {
       const torch = world.torches[o.idx];
       const lit = order.slice(0, k + 1).map((x) => x.idx);
-      const taken = world.pumpkins.map((_, j) => j).filter((j) => o.pm & (1 << j));
+      // every pumpkin and lantern counts as eaten: one eaten after this torch stays eaten when Wick
+      // dies and respawns here, so the floor alone has to get you to the next torch
+      const taken = world.pumpkins.map((_, j) => j);
       const floor = torch.floor;
       const res = search(LEVELS[i], {
         start: { x: torch.x - CFG.BODY_W / 2, feet: torch.y, wax: floor },

@@ -3,7 +3,8 @@
 import { CFG, clamp, lerp } from '../config.js';
 import { STONE, ONEWAY, BLOB, COBWEB, GATE, EMITTER, DOOR } from '../physics.js';
 import { drawFlame } from './draw-wick.js';
-import { drawThemeSky, drawThemeBackdrop, drawWallMotif } from './theme-fx.js';
+import { drawThemeSky, drawThemeBackdrop, drawWallMotif, skyFlash } from './theme-fx.js';
+import { backdropFor, drawSky, drawStrip, drawSmoke, drawHaze, drawFarRain, drawFarSnow, mix, queueLights, clearLights } from './backdrop.js';
 import { skyline } from './lighting.js';
 import { Post } from './post.js';
 import { Settings } from '../settings.js';
@@ -873,140 +874,51 @@ function analyse(world, theme) {
 
 // ------------------------------------------------------------ parallax strips
 const STRIP_W = 2400;
-let parallax = null;
-function buildParallax() {
-  return [
-    houseStrip(260, '#4a2464', '#5a2c70', 0.18, 3, 0.06),
-    houseStrip(300, '#311748', '#3c1d56', 0.36, 7, 0.22),
-  ];
-}
-
-function houseStrip(height, col, roofCol, factor, seed, windowChance) {
-  const c = canvas(STRIP_W, height + 60);
-  const g = c.getContext('2d');
-  g.translate(0, 60);
-  const r = rng(seed * 977);
-  const chimneys = [], lights = [];
-  let x = 0;
-  while (x < STRIP_W) {
-    const w = 70 + r() * 110;
-    const h = 70 + r() * (height - 130);
-    const y = height - h;
-    g.fillStyle = col;
-    g.fillRect(x, y, w, h);
-    g.fillStyle = roofCol;
-    if (r() < 0.6) {
-      g.beginPath(); g.moveTo(x - 6, y + 2); g.lineTo(x + w / 2, y - 26 - r() * 30); g.lineTo(x + w + 6, y + 2); g.fill();
-    } else {
-      g.fillRect(x - 4, y - 6, w + 8, 8);
-    }
-    if (r() < 0.6) { const chx = x + w * (0.2 + r() * 0.5); g.fillStyle = col; g.fillRect(chx, y - 40, 10, 34); chimneys.push({ x: chx + 5, y: y - 40 + 60, s: r() }); }
-    for (let wy = y + 22; wy < height - 20; wy += 30) {
-      for (let wx = x + 12; wx < x + w - 18; wx += 26) {
-        if (r() < windowChance + 0.18) {
-          const lit = r() < 0.55;
-          g.fillStyle = lit ? (r() < 0.5 ? '#ffb24a' : '#f08a38') : 'rgba(20,8,30,0.5)';
-          g.fillRect(wx, wy, 9, 12);
-          if (lit) { g.fillStyle = 'rgba(255,190,90,0.18)'; g.fillRect(wx - 4, wy - 4, 17, 20); if (r() < 0.3) lights.push(wx, wy + 60, r() * 100); }
-        }
-      }
-    }
-    x += w + r() * 14;
-  }
-  return { canvas: c, factor, height: height + 60, chimneys, lights };
-}
-
 // ------------------------------------------------------------ sky + background
 let frameTime = 0;           // this frame's clock, for passes that are not handed it
 export function drawBackground(ctx, cam, world, time) {
   frameTime = time;
-  if (!parallax) parallax = buildParallax();
   const th = themeOf(world);
   const W = CFG.VIEW_W, H = CFG.VIEW_H;
-  const sky = ctx.createLinearGradient(0, 0, 0, H);
-  sky.addColorStop(0, th.sky[0]);
-  sky.addColorStop(0.45, th.sky[1]);
-  sky.addColorStop(0.8, th.sky[2]);
-  sky.addColorStop(1, th.sky[3]);
-  ctx.fillStyle = sky;
-  ctx.fillRect(0, 0, W, H);
-
+  const p = journey(world);
+  const q = Post.quality;
+  const B = backdropFor(th, world, p, ctx.getTransform().a >= 1.5 && q >= 1 ? 2 : 1);
+  Post.setJourney(p, B.n);
   const lift = Math.max(0, (world.pxH || H) - H - cam.y);
-  if (th.stars || th.moon) {
-    const r = rng(42);
-    for (let i = 0; i < 80; i++) {
-      const sx = ((r() * W * 3 - cam.x * 0.02) % W + W) % W;
-      const sy = r() * H * 0.55 + lift * 0.02;
-      const a = 0.25 + 0.55 * Math.abs(Math.sin(time * (0.4 + r()) + i));
-      ctx.fillStyle = `rgba(255,240,225,${a})`;
-      ctx.fillRect(sx, sy, r() < 0.15 ? 2.2 : 1.4, r() < 0.15 ? 2.2 : 1.4);
-    }
-  }
-  if (th.moon) {
-    const mx = W * 0.22 - (cam.x * 0.015) % 60, my = 90 + lift * 0.03;
-    const mg = ctx.createRadialGradient(mx, my, 20, mx, my, 160);
-    mg.addColorStop(0, 'rgba(210,220,255,0.35)'); mg.addColorStop(1, 'rgba(160,170,230,0)');
-    ctx.fillStyle = mg; ctx.fillRect(mx - 160, my - 160, 320, 320);
-    ctx.fillStyle = '#e8ecff';
-    ctx.beginPath(); ctx.arc(mx, my, 30, 0, 6.283); ctx.fill();
-    ctx.fillStyle = 'rgba(150,160,200,0.45)';
-    ctx.beginPath(); ctx.arc(mx - 9, my - 6, 6, 0, 6.283); ctx.arc(mx + 10, my + 8, 4.5, 0, 6.283); ctx.arc(mx + 4, my - 12, 3, 0, 6.283); ctx.fill();
-  } else {
+  drawSky(ctx, B, cam, time, lift, p, skyFlash(world), q);
+  if (!th.moon) {
+    // the low sun's afterglow, fading as the night deepens
     const sunY = H * 0.78 + lift * 0.05;
-    const sun = ctx.createRadialGradient(W * 0.3, sunY, 10, W * 0.3, sunY, 280);
-    sun.addColorStop(0, `rgba(${th.glow},0.6)`);
+    const sun = ctx.createRadialGradient(W * 0.3, sunY, 10, W * 0.3, sunY, 300);
+    sun.addColorStop(0, `rgba(${th.glow},${0.55 * (1 - 0.55 * B.n.night)})`);
     sun.addColorStop(1, `rgba(${th.glow},0)`);
     ctx.fillStyle = sun;
     ctx.fillRect(0, 0, W, H);
   }
-  if (th.clouds) drawClouds(ctx, cam, th, time, lift);
   drawThemeSky(ctx, cam, world, time, th, lift);
   drawSkyLife(ctx, th, time, lift);
 
-  const baseY = H * 0.86 + lift * 0.08;
-  drawCastle(ctx, W * 0.72 - (cam.x * 0.04) % 400, baseY, time, world);
-
-  parallax.forEach((L, i) => {
-    const ox = -((cam.x * L.factor) % STRIP_W);
-    const y = H - L.height + 100 + lift * L.factor * 0.9 + (L.factor > 0.3 ? 30 : 0);
-    ctx.drawImage(L.canvas, ox, y);
-    ctx.drawImage(L.canvas, ox + STRIP_W, y);
-    if (i === 1) {
-      // someone in the town turns in for the night, someone else lights a lamp
-      ctx.fillStyle = 'rgba(30,14,44,0.82)';
-      for (const base of [ox, ox + STRIP_W]) {
-        for (let k = 0; k < L.lights.length; k += 3) {
-          const wx = base + L.lights[k];
-          if (wx < -10 || wx > W + 10) continue;
-          const ph = L.lights[k + 2];
-          if (Math.sin(time * 0.11 + ph) * Math.sin(time * 0.037 + ph * 3) > 0.42) ctx.fillRect(wx, y + L.lights[k + 1], 9, 12);
-        }
-      }
-      // lazy chimney smoke curling up from the town
-      for (const ch of L.chimneys) {
-        for (const base of [ox, ox + STRIP_W]) {
-          const cx = base + ch.x, cy = y + ch.y;
-          if (cx < -60 || cx > W + 60) continue;
-          for (let k = 0; k < 4; k++) {
-            const ph = (time * 0.18 + k / 4 + ch.s) % 1;
-            ctx.fillStyle = `rgba(200,170,200,${0.14 * (1 - ph)})`;
-            ctx.beginPath();
-            ctx.arc(cx + ph * 26 + Math.sin(time + k + ch.s * 9) * 4, cy - ph * 70, 4 + ph * 12, 0, 6.283);
-            ctx.fill();
-          }
-        }
-      }
-    }
-    // atmospheric perspective: far layers melt into the sky
-    if (i === 0) {
-      const hz = ctx.createLinearGradient(0, y + 40, 0, H);
-      hz.addColorStop(0, hexA(th.haze, 0));
-      hz.addColorStop(0.35, hexA(th.haze, 0.3));
-      hz.addColorStop(1, hexA(th.haze, 0.3));
-      ctx.fillStyle = hz;
-      ctx.fillRect(0, y + 40, W, H - y);
-    }
-  });
+  // depth by depth, far to near: hills, the castle, landmarks, the town, the near town
+  const [, , s2, s3] = B.cols;
+  drawStrip(ctx, B.ridge, cam, 0.05, 186 + lift * 0.05, 0, q);
+  if (th.rain && q >= 1) drawFarRain(ctx, time, 60, 0.1);
+  if (th.snow) drawFarSnow(ctx, cam, time, q >= 1 ? 60 : 30);
+  drawCastle(ctx, W * 0.72 - (cam.x * 0.04) % 400, H * 0.86 + lift * 0.08, time, world, B);
+  const lit = torchesLit(world);
+  const fy = 142 + lift * 0.1;
+  clearLights();
+  const fo = drawStrip(ctx, B.far, cam, 0.1, fy, 0.75, q);
+  queueLights(B.far, fo, fy, 0.5);
+  drawSmoke(ctx, B.far, fo, fy, time, s3, q);
+  drawHaze(ctx, s2, 280 + lift * 0.12, H + lift * 0.12, 0.28);
+  const ty = 132 + lift * 0.18 * 0.9;
+  const to = drawStrip(ctx, B.town, cam, 0.18, ty, 0.5 + 0.5 * lit, q);
+  queueLights(B.town, to, ty, 0.35 + 0.65 * lit);
+  drawSmoke(ctx, B.town, to, ty, time, s3, q);
+  const ny = 132 + lift * 0.36 * 0.9;
+  const no = drawStrip(ctx, B.near, cam, 0.36, ny, 0.45 + 0.55 * lit, q);
+  queueLights(B.near, no, ny, 0.3 + 0.7 * lit);
+  drawSmoke(ctx, B.near, no, ny, time, mix(s2, s3, 0.5), q);
   drawFarTint(ctx, th, lift);
   drawThemeBackdrop(ctx, cam, world, time, th, lift);
   drawTrees(ctx, cam, world);
@@ -1021,7 +933,7 @@ function drawFarTint(ctx, th, lift) {
   if (th.name === 'canal') {
     const y0 = H * 0.3 + lift * 0.1;
     const g = ctx.createLinearGradient(0, y0, 0, H);
-    g.addColorStop(0, 'rgba(10,16,40,0)'); g.addColorStop(0.4, 'rgba(10,16,40,0.32)'); g.addColorStop(1, 'rgba(8,12,32,0.42)');
+    g.addColorStop(0, 'rgba(10,16,40,0)'); g.addColorStop(0.4, 'rgba(10,16,40,0.14)'); g.addColorStop(1, 'rgba(8,12,32,0.22)');
     ctx.fillStyle = g; ctx.fillRect(0, y0, W, H - y0);
   } else if (th.farTint) {
     ctx.save();
@@ -1108,14 +1020,23 @@ function drawRainStreaks(ctx, time, alpha, n, speed, world, cam) {
   ctx.stroke();
 }
 
+// How many of the level's torches are lit, 0..1: the town wakes up behind Wick.
+function torchesLit(world) {
+  if (!world.entities) return 1;          // title and end screens: the whole town is awake
+  let n = 0, lit = 0;
+  for (const e of world.entities) if (e.type === 'torch') { n++; if (e.lit) lit++; }
+  return n ? lit / n : 0;
+}
+
 // Where this level sits in the journey, 0 (first) .. 1 (finale).
 const progressCache = new WeakMap();
 function journey(world) {
   let p = progressCache.get(world);
   if (p !== undefined) return p;
   let i = LEVEL_LIST.indexOf(world.data);
-  if (i < 0) i = LEVEL_LIST.findIndex((l) => l.name === world.data.name);
-  p = i < 0 ? 0.5 : i / Math.max(1, LEVEL_LIST.length - 1);
+  if (i < 0 && world.data.name) i = LEVEL_LIST.findIndex((l) => l.name === world.data.name);
+  // screens without a level: the title is the start of the evening, the end is the finale
+  p = world.data.finale ? 1 : i < 0 ? 0 : i / Math.max(1, LEVEL_LIST.length - 1);
   progressCache.set(world, p);
   return p;
 }
@@ -1123,18 +1044,20 @@ function journey(world) {
 // The castle is the destination and a progression clock: small and hazy at the
 // start, looming larger and darker as Wick nears it. Its beacon only burns once
 // the finale torch is lit.
-function drawCastle(ctx, x, baseY, time, world) {
+function drawCastle(ctx, x, baseY, time, world, B) {
   const p = journey(world);
   const k = 0.62 + 0.62 * p;                 // scale: far away .. looming
   const rise = 26 * (1 - p);                  // far castles sit lower behind the town
   ctx.save();
   ctx.translate(x, baseY + rise);
   ctx.scale(k, k);
-  ctx.fillStyle = lerpColor('#5a2c70', '#3a1c58', p);
+  // far away it is nearly sky-coloured; as Wick nears it, it darkens toward ink
+  const [, s1, s2] = B.cols;
+  ctx.fillStyle = mix(s2, '#0a0614', 0.18 + 0.3 * p);
   ctx.beginPath();
   ctx.ellipse(0, 60, 420, 120, 0, Math.PI, 0);
   ctx.fill();
-  const wall = lerpColor('#4c2664', '#2a1444', p);
+  const wall = mix(mix(s2, s1, 0.5), '#0a0614', 0.12 + 0.5 * p);
   ctx.fillStyle = wall;
   const towers = [[-110, 120, 34], [-60, 90, 60], [0, 170, 44], [55, 110, 70], [110, 140, 32]];
   for (const [dx, h, w] of towers) {
@@ -2540,19 +2463,6 @@ function wrap(ctx, parts, maxW) {
   return lines;
 }
 
-function lerpColor(a, b, t) {
-  const pa = parseInt(a.slice(1), 16), pb = parseInt(b.slice(1), 16);
-  const r = ((pa >> 16) & 255) + (((pb >> 16) & 255) - ((pa >> 16) & 255)) * t;
-  const g = ((pa >> 8) & 255) + (((pb >> 8) & 255) - ((pa >> 8) & 255)) * t;
-  const bl = (pa & 255) + ((pb & 255) - (pa & 255)) * t;
-  return `rgb(${r | 0},${g | 0},${bl | 0})`;
-}
-
-function hexA(hex, a) {
-  const n = parseInt(hex.slice(1), 16);
-  return `rgba(${(n >> 16) & 255},${(n >> 8) & 255},${n & 255},${a})`;
-}
-
 // Drip guide: a ghost of where the next wax blob will land, and a ring on the
 // blob that "soak" would take. Makes the drip rules readable at a glance.
 export function drawDripGuide(ctx, player, world, time, opts = {}) {
@@ -2970,7 +2880,9 @@ export function drawWindStreaks(ctx, cam, world, time) {
 // reaches the bottom of the world. Open runs are merged so the ripple is continuous.
 const waterRuns = [];        // [x0, x1, y] world px, re-lit after the darkness
 let waterTime = 0;
+let waterWorld = null;
 function drawWater(ctx, cam, world, time) {
+  waterWorld = world;
   const y = world.pxH - T - 10;
   if (y > cam.y + cam.h) return;
   const x0 = Math.max(0, Math.floor(cam.x / T)), x1 = Math.min(world.w - 1, Math.floor((cam.x + cam.w) / T));
@@ -3030,4 +2942,22 @@ function drawWaterGlints(ctx, time) {
   if (Post.quality < 1) return;
   ctx.fillStyle = 'rgba(40,150,160,0.10)';
   for (let i = 0; i < waterRuns.length; i += 3) ctx.fillRect(waterRuns[i], waterRuns[i + 2] - 2, waterRuns[i + 1] - waterRuns[i], 12);
+  // lamps and torches on the quay lay a broken column of light down the water
+  const src = [];
+  if (waterWorld && waterWorld.entities) for (const e of waterWorld.entities) if (e.type === 'torch' || e.type === 'goal') src.push(e.x, e.y - 20, e.lit ? 1 : 0.35);
+  for (let i = 0; i < lanternGlows.length; i += 2) src.push(lanternGlows[i], lanternGlows[i + 1], 0.7);
+  for (let i = 0; i < waterRuns.length; i += 3) {
+    const a = waterRuns[i], b = waterRuns[i + 1], y = waterRuns[i + 2];
+    for (let j = 0; j < src.length; j += 3) {
+      const lx = src[j], ly = src[j + 1];
+      if (lx < a - 8 || lx > b + 8 || ly > y || y - ly > 10 * T) continue;
+      const k0 = src[j + 2] * (1 - (y - ly) / (10 * T));
+      for (let k = 0; k < 6; k++) {
+        const w = (16 - k * 1.8) * (0.8 + 0.3 * Math.sin(time * 2.6 + k * 1.7 + lx));
+        const x = lx + Math.sin(time * 1.9 + k * 1.3 + lx * 0.1) * (1 + k) * 1.4;
+        ctx.fillStyle = `rgba(255,${190 - k * 12},${110 - k * 8},${0.4 * k0 * (1 - k / 6)})`;
+        ctx.fillRect(x - w / 2, y + 3 + k * 5, w, 2);
+      }
+    }
+  }
 }

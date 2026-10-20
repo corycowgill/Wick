@@ -142,23 +142,92 @@ export const UI = {
     }
   },
 
+  // The chapter card: a slanted ribbon sweeps in from the left, the level number tracks in
+  // beside a small flame, the name settles, a gold rule draws out under it, then the ribbon
+  // sweeps on off to the right. Never blocks control (play runs underneath).
   drawLevelCard(ctx, world, index, t) {
     const total = CFG.LEVEL_CARD_TIME;
-    const a = clamp(Math.min(t / 0.4, (total - t) / 0.6), 0, 1);
-    if (a <= 0) return;
+    if (t >= total) return;
+    const out = (k) => 1 - (1 - k) ** 3, inn = (k) => k * k * k;
+    const kin = out(clamp(t / 0.32, 0, 1)), kout = inn(clamp((t - (total - 0.38)) / 0.38, 0, 1));
+    const y0 = H * 0.24, bh = 120, S = 60;
+    // the ribbon's two slanted edges: the right sweeps in, then the left sweeps out
+    const right = -S + (W + 2 * S) * kin, left = -S + (W + 2 * S) * kout;
+    if (right <= left) return;
     ctx.save();
-    ctx.globalAlpha = a;
+    ctx.beginPath();
+    ctx.moveTo(left + S, y0); ctx.lineTo(right + S, y0); ctx.lineTo(right - S, y0 + bh); ctx.lineTo(left - S, y0 + bh);
+    ctx.closePath();
+    const g = ctx.createLinearGradient(0, y0, 0, y0 + bh);
+    g.addColorStop(0, 'rgba(16,8,30,0.5)'); g.addColorStop(0.5, 'rgba(20,10,36,0.74)'); g.addColorStop(1, 'rgba(16,8,30,0.5)');
+    ctx.fillStyle = g; ctx.fill();
+    ctx.clip();
+    // gold hairlines along the ribbon's top and bottom
+    ctx.fillStyle = 'rgba(232,176,58,0.7)';
+    ctx.fillRect(0, y0 + 3, W, 1.5); ctx.fillRect(0, y0 + bh - 4.5, W, 1.5);
+    ctx.textAlign = 'center'; ctx.textBaseline = 'middle';
+    const fade = 1 - kout, drift = (1 - out(clamp((t - 0.05) / 0.4, 0, 1))) * -26 + kout * 40;
+    // LEVEL n, tracking in from wide letter spacing, a little flame before it
+    const tk = out(clamp((t - 0.06) / 0.45, 0, 1));
+    const label = `LEVEL ${index + 1}`, gap = 2 + 12 * (1 - tk);
+    ctx.font = `700 15px ${SANS}`;
+    let lw = 0;
+    for (const ch of label) lw += ctx.measureText(ch).width + gap;
+    lw -= gap;
+    ctx.globalAlpha = tk * fade;
+    let x = W / 2 - lw / 2 + drift * 0.6;
+    drawFlame(ctx, x - 14, y0 + 31, 4.2, Math.sin(t * 5) * 0.15, t);
+    ctx.fillStyle = '#e8b03a'; ctx.textAlign = 'left';
+    for (const ch of label) { ctx.fillText(ch, x, y0 + 26); x += ctx.measureText(ch).width + gap; }
     ctx.textAlign = 'center';
-    ctx.textBaseline = 'middle';
-    ctx.fillStyle = 'rgba(20,10,36,0.55)';
-    ctx.fillRect(0, H * 0.24, W, 120);
-    ctx.font = `600 16px ${SANS}`;
-    ctx.fillStyle = '#e8b03a';
-    ctx.fillText(`LEVEL ${index + 1}`, W / 2, H * 0.24 + 26);
-    titleText(ctx, world.name, W / 2, H * 0.24 + 62, 44);
+    // the name: settles from a touch larger, with the ribbon's drift
+    const nk = out(clamp((t - 0.1) / 0.35, 0, 1));
+    ctx.globalAlpha = nk * fade;
+    ctx.save();
+    ctx.translate(W / 2 + drift, y0 + 62);
+    const sc = 1 + 0.12 * (1 - nk); ctx.scale(sc, sc);
+    titleText(ctx, world.name, 0, 0, 44);
+    ctx.restore();
+    // the gold rule draws out from the centre
+    ctx.font = `900 44px ${SERIF}`;
+    const rw = (ctx.measureText(world.name).width * 0.5 + 30) * out(clamp((t - 0.22) / 0.4, 0, 1));
+    ctx.globalAlpha = fade;
+    if (rw > 1) {
+      const rg = ctx.createLinearGradient(W / 2 - rw, 0, W / 2 + rw, 0);
+      rg.addColorStop(0, 'rgba(232,176,58,0)'); rg.addColorStop(0.5, 'rgba(255,214,120,0.95)'); rg.addColorStop(1, 'rgba(232,176,58,0)');
+      ctx.fillStyle = rg; ctx.fillRect(W / 2 - rw + drift, y0 + 84, rw * 2, 1.5);
+    }
+    // the hint, last in
+    ctx.globalAlpha = clamp((t - 0.3) / 0.3, 0, 1) * fade;
     ctx.font = `italic 17px ${SERIF}`;
     ctx.fillStyle = '#fbe9c8';
-    ctx.fillText(world.hint, W / 2, H * 0.24 + 100);
+    ctx.fillText(world.hint, W / 2 + drift * 0.4, y0 + 102);
+    ctx.restore();
+  },
+
+  // The death / respawn wipe: a sheet of night slides across with a melted-wax leading edge
+  // and a warm rim. k = 0 covered .. 1 clear; it comes in from the left as the flame goes
+  // out (dying) and carries on off to the right as Wick lights again.
+  drawWipe(ctx, k, opening, time) {
+    if (k >= 1) return;
+    const S = 150, span = W + 2 * S;
+    const c = opening ? clamp(k, 0, 1) : 1 - clamp(k, 0, 1);
+    const e = -S + span * (opening ? 1 - (1 - c) ** 2 : c * c);
+    const edge = (y) => e + (0.5 - y / H) * S + Math.sin(y * 0.05 + time * 4) * 7 + Math.max(0, Math.sin(y * 0.021 + 1.3)) ** 6 * 26 * (opening ? -1 : 1);
+    const side = opening ? W + 20 : -20;
+    ctx.save();
+    ctx.beginPath();
+    ctx.moveTo(side, -10);
+    for (let y = -10; y <= H + 10; y += 12) ctx.lineTo(edge(y), y);
+    ctx.lineTo(side, H + 10);
+    ctx.closePath();
+    ctx.fillStyle = '#0c0518';
+    ctx.fill();
+    ctx.beginPath();
+    for (let y = -10; y <= H + 10; y += 12) y < 0 ? ctx.moveTo(edge(y), y) : ctx.lineTo(edge(y), y);
+    ctx.lineJoin = 'round';
+    ctx.strokeStyle = 'rgba(255,150,70,0.22)'; ctx.lineWidth = 12; ctx.stroke();
+    ctx.strokeStyle = 'rgba(255,190,110,0.85)'; ctx.lineWidth = 2.5; ctx.stroke();
     ctx.restore();
   },
 
@@ -736,7 +805,9 @@ export const UI = {
   },
 
   // why Wick went out: a small pill above Wick (the stub, then Wick back at the torch)
-  drawDeathCaption(ctx, cap, x, y) {
+  // With feetY the pill sits under Wick's feet instead, clear of any sign bubble overhead,
+  // held off the bottom corners where the HUD and the touch pad live.
+  drawDeathCaption(ctx, cap, x, y, feetY = null) {
     const a = clamp(Math.min(cap.t / 0.12, (cap.life - cap.t) / 0.45), 0, 1);
     if (a <= 0) return;
     ctx.save();
@@ -744,8 +815,10 @@ export const UI = {
     ctx.font = `700 15px ${SANS}`;
     ctx.textAlign = 'center'; ctx.textBaseline = 'middle';
     const w = ctx.measureText(cap.text).width + 28, h = 28;
-    const bx = clamp(x - w / 2, 12, W - 12 - w);
-    const by = clamp(y - 40 - h - (1 - Math.min(1, cap.t / 0.12)) * 6, 70, H - h - 12);
+    const rise = (1 - Math.min(1, cap.t / 0.12)) * 6;
+    const under = feetY != null;
+    const bx = under ? clamp(x, 330, W - 330) - w / 2 : clamp(x - w / 2, 12, W - 12 - w);
+    const by = under ? Math.min(feetY + 16, H - 150) + rise : clamp(y - 40 - h - rise, 70, H - h - 12);
     ctx.fillStyle = 'rgba(20,10,32,0.88)';
     roundRect(ctx, bx, by, w, h, 14); ctx.fill();
     ctx.strokeStyle = `rgba(${cap.rgb},0.85)`; ctx.lineWidth = 1.5; ctx.stroke();

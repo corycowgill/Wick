@@ -4,6 +4,7 @@ import { Events } from './events.js';
 import { Input, input, setBindings } from './input.js';
 import { Settings, keyName, TOUCH_SIZES, TOUCH_OPACITIES } from './settings.js';
 import { Player } from './player.js';
+import { ONEWAY, BLOB } from './physics.js';
 import { createWorld } from './level.js';
 import { Camera } from './render/camera.js';
 import { Lighting } from './render/lighting.js';
@@ -12,7 +13,7 @@ import {
   drawTileGlows, drawMist, drawForeground, themeOf, drawDripGuide, drawDecor, drawDecorGlows, drawDripGlows,
   drawJumpShadow, drawLightDetail, drawWindStreaks, THEMES,
 } from './render/draw-world.js';
-import { drawWick, drawWickFx, drawWickRim, wickMood, wickNudge, wickKnead, wickPurr } from './render/draw-wick.js';
+import { drawWick, drawWickFx, drawWickRim, wickMood, wickNudge, wickKnead, wickPurr, wickReignite } from './render/draw-wick.js';
 import { Particles } from './render/particles.js';
 import { Audio } from './audio.js';
 import { UI } from './ui.js';
@@ -248,9 +249,12 @@ window.addEventListener('blur', () => { if (state.scene === 'play' && !DEBUG) st
 // ---------------------------------------------------------------- events -> juice
 const P = state.particles;
 const shake = (amount) => { if (Settings.get().shake) state.camera.shake(amount); };
-Events.on('jump', (e) => { wickNudge(); Audio.sfx('jump', e); P.dust(e.x, e.y, 4, 0.6); if (state.help) { const j = state.help.jumps; j.push({ t: state.levelStats.time, x: e.x }); if (j.length > 20) j.shift(); } });
+Events.on('jump', (e) => { wickNudge(); Audio.sfx('jump', e); footstep(e.x, e.y, 0.8); P.jumpPuff(e.x, e.y, 0.6 + 0.6 * e.frac); if (state.help) { const j = state.help.jumps; j.push({ t: state.levelStats.time, x: e.x }); if (j.length > 20) j.shift(); } });
 Events.on('land', (e) => {
   Audio.sfx('land', e);
+  Audio.sfx('thud', e);
+  footstep(e.x, e.y, 1 + e.hard);
+  feel.landed = true;
   P.dust(e.x, e.y, 6 + (e.hard * 6 | 0), 0.6 + e.hard);
   if (e.frac > 0.6) shake(1.5 + e.hard * 4 * e.frac);
   if (e.hard > 0.15) P.shock(e.x, e.y, e.hard);
@@ -295,7 +299,7 @@ Events.on('keepsake', (e) => {
   state.keepsakePop = 1;
   UI.toast('Keepsake found!', 2.2);
 });
-Events.on('blobLand', (e) => { P.splat(e.x, e.y - 4, 6); P.dust(e.x, e.y, 4, 0.5); });
+Events.on('blobLand', (e) => { Audio.sfx('blobLand'); P.splat(e.x, e.y - 4, 6); P.dust(e.x, e.y, 4, 0.5); });
 Events.on('ignite', (e) => { Audio.sfx('ignite'); P.sparks(e.x, e.y, 6, 90); });
 Events.on('plate', (e) => { Audio.sfx('plate', { down: e.down }); if (e.down) P.dust(e.x, e.y, 4, 0.4); });
 Events.on('door', (e) => { if (e.open) wickMood('surprise', 0.6); Audio.sfx('door', { open: e.open }); P.dust(e.x, e.y, 8, 0.7); shake(1.5); });
@@ -308,6 +312,7 @@ Events.on('moth', (e) => {
   P.smoke(e.x, e.y, 4);
   shake(3);
   state.hitStop = 2;
+  state.chroma = 1;
   if (state.help) state.help.lastMoth = state.levelStats.time;
   Input.gamepad.rumble('land');
 });
@@ -317,6 +322,8 @@ Events.on('death', (e) => {
   if (e.reason === 'water') { for (let i = 0; i < 18; i++) P.steam(e.x, e.y - 30); P.ring(e.x, e.y - 30, 70, '200,220,255'); }
   else { P.splat(e.x, e.y - 20, 14); P.sparks(e.x, e.y - 30, 8, 80, '255,120,50'); }
   P.smoke(e.x, e.y - 10, 12);
+  P.burst(e.x, e.y - 30, e.reason === 'water' ? '170,210,255' : '255,150,70');
+  state.deathFlash = 1;
   shake(3);
   Input.gamepad.rumble('death');
   noteDeath(e);
@@ -415,6 +422,10 @@ function startLevel(i) {
   state.cardRang = 0;
   state.paused = false;
   state.iris = 0;
+  state.irisWipe = false;
+  state.respawnPop = 0;
+  state.chroma = 0;
+  state.deathFlash = 0;
   state.trail = [];
   state.fireworks = 0;
   state.scene = 'play';
@@ -467,6 +478,7 @@ function toTitle() {
   Audio.ambience(null);
   Audio.setFlame(0, false);
   Audio.heartbeat(1, false);
+  Audio.setDark(0);
 }
 
 function titleItems() {
@@ -610,12 +622,73 @@ function respawn() {
   state.world.reset(state.player);
   state.camera.snap(state.player, state.world);
   const f = state.player.flamePos();
-  P.sparks(f.x, f.y, 12, 110);
-  P.ring(f.x, f.y, 60);
+  P.gather(f.x, f.y - 6);
   P.smoke(f.x, f.y - 4, 3);
+  wickReignite(0.16);
+  state.respawnPop = 0.26;
   Audio.sfx('respawn');
   wickMood('surprise', 0.5);
   state.iris = Math.min(state.iris, 0.3);
+  state.irisWipe = true;
+}
+
+// Footfalls, run dust and skids: presentation only, read from the player each step.
+const feel = { ground: true, stride: 0, facing: 1, skidT: 0, landed: false, dark: 0 };
+// what is underfoot, for the footstep sound and a splash in the wet
+function surfaceAt(x, y) {
+  const w = state.world, T = CFG.TILE;
+  if (state.player.riding) return 'wood';
+  const c = w.cell(Math.floor(x / T), Math.floor((y + 2) / T));
+  if (c === BLOB) return 'wax';
+  if (c === ONEWAY) return 'wood';
+  const th = themeOf(w);
+  if (th.rain || th.stone === 'wet') return 'wet';
+  if (th.name === 'barn' || th.name === 'works') return 'wood';
+  if (th.fg === 'grass' || th.leaves) return 'grass';
+  return 'stone';
+}
+function footstep(x, y, vol = 1) {
+  if (!state.world || state.replay) return;
+  Audio.sfx('step', { surface: surfaceAt(x, y), vol });
+}
+function feetFx(dt, world, player) {
+  feel.skidT = Math.max(0, feel.skidT - dt);
+  if (!player.alive || state.completeTimer) { feel.ground = player.onGround; feel.landed = false; return; }
+  if (player.onGround && !feel.ground && !feel.landed) {
+    // a small drop with no hard-landing event still settles with a puff and a footfall
+    P.dust(player.cx, player.feet, 3, 0.35);
+    footstep(player.cx, player.feet, 0.6);
+  }
+  feel.landed = false;
+  feel.ground = player.onGround;
+  if (!player.onGround) {
+    // pressed against a wall in the air: wax scuffs off it in little flakes
+    const dir = Math.sign(input.moveX || 0), T = CFG.TILE;
+    if (dir && Math.abs(player.vx) < 1 && Math.random() < 14 * dt) {
+      const wx = dir > 0 ? player.x + player.w + 1 : player.x - 1;
+      if (world.isSolid(Math.floor(wx / T), Math.floor((player.y + player.h * 0.6) / T))) {
+        P.add({ kind: 'dust', layer: 'world', x: wx, y: player.y + player.h * (0.3 + Math.random() * 0.5), vx: -dir * (10 + Math.random() * 25), vy: 20 + Math.random() * 30, drag: 3, life: 0.3, size: 1.2 + Math.random(), grow: 4 });
+      }
+    }
+    feel.facing = player.facing;
+    return;
+  }
+  const speed = Math.abs(player.vx);
+  // one footfall per stride of the trot (draw-wick bobs at sin(t * 16): a stride every pi/16 s)
+  const stride = Math.floor(state.time * 16 / Math.PI);
+  if (speed > 60 && stride !== feel.stride) {
+    const wet = surfaceAt(player.cx, player.feet) === 'wet';
+    if (stride % 2 === 0 || wet) P.step(player.cx, player.feet, Math.sign(player.vx), wet && Math.random() < 0.5);
+    footstep(player.cx, player.feet, 0.35 + 0.4 * speed / CFG.RUN_SPEED);
+  }
+  feel.stride = stride;
+  // a hard turn at speed plants the paws
+  if (player.facing !== feel.facing && speed > 110 && feel.skidT <= 0) {
+    P.skid(player.cx, player.feet, player.facing);
+    if (!state.replay) Audio.sfx('skid', { vol: speed / CFG.RUN_SPEED });
+    feel.skidT = 0.25;
+  }
+  feel.facing = player.facing;
 }
 
 // ---------------------------------------------------------------- update
@@ -766,7 +839,7 @@ function update(dt) {
     state.stats.time += dt;
     state.levelStats.time += dt;
     // the iris holds open for most of the death beat so the cause reads, then shuts fast
-    if (!player.alive) state.iris = Math.min(state.iris, Math.max(0, player.deathTimer / 0.25));
+    if (!player.alive) { state.iris = Math.min(state.iris, Math.max(0, player.deathTimer / 0.25)); if (state.iris < 1) state.irisWipe = true; }
     if (!player.alive && player.deathTimer <= 0) {
       state.stats.deaths++;
       state.levelStats.deaths++;
@@ -796,6 +869,20 @@ function update(dt) {
     state.gusts.set(z, z.state);
   }
   hazardCues(world, player);
+  feetFx(dt, world, player);
+  if (state.respawnPop > 0 && (state.respawnPop -= dt) <= 0 && player.alive) {
+    // the gathered beads pop as the flame catches
+    const f = player.flamePos();
+    P.sparks(f.x, f.y - 6, 12, 120);
+    P.ring(f.x, f.y - 6, 54);
+    P.ember(f.x, f.y - 10, 1); P.ember(f.x, f.y - 10, 1);
+  }
+  {
+    // dark zones muffle the world a little
+    const T = CFG.TILE, inDark = player.alive && world.isDark(Math.floor(player.cx / T), Math.floor((player.y + player.h / 2) / T));
+    feel.dark += ((inDark ? 1 : 0) - feel.dark) * Math.min(1, dt * 2.5);
+    Audio.setDark(feel.dark);
+  }
   P.ambient(dt, camera, world, !!themeOf(world).leaves);
   updateThemeFx(dt, P, camera, world, player, themeOf(world), (n) => Audio.sfx(n));
   if (player.alive) {
@@ -837,10 +924,13 @@ function update(dt) {
   P.update(dt);
   state.levelCard = Math.max(0, state.levelCard - dt);
   state.flash = Math.max(0, state.flash - dt * 2.2);
+  state.chroma = Math.max(0, (state.chroma || 0) - dt * 6);
+  state.deathFlash = Math.max(0, (state.deathFlash || 0) - dt * 5);
   state.hudFail = Math.max(0, (state.hudFail || 0) - dt * 2.5);
   state.keepsakePop = Math.max(0, (state.keepsakePop || 0) - dt * 1.5);
   Input.touch.setEnabled('drip', player.canAffordDrip());
-  if (player.alive) state.iris = Math.min(1, state.iris + dt * 3);
+  if (player.alive) state.iris = Math.min(1, state.iris + dt * (state.irisWipe ? 4.5 : 2.6));
+  if (state.iris >= 1) state.irisWipe = false;
   Audio.setFlame(player.waxFrac(), player.alive);
   Audio.purr(wickPurr());
   Audio.setTempo(player.waxFrac());
@@ -897,6 +987,7 @@ function render() {
 
 function renderPlay(t) {
   const { world, player, camera } = state;
+  camera.px = 1 / scale;
   const cam = { x: camera.vx, y: camera.vy, w: W, h: H };
   drawBackground(ctx, cam, world, t);
   const lights = world.lights(player);
@@ -944,6 +1035,17 @@ function renderPlay(t) {
   drawForeground(ctx, cam, world, t);
   Post.shafts(ctx, cam, themeOf(world).name, t);
 
+  if (state.deathFlash > 0 && !player.alive) {
+    // the instant the flame goes out: a hot white pinch of light where it was
+    const k = state.deathFlash, x = player.cx - cam.x, y = player.feet - 30 - cam.y;
+    const soft = Settings.get().reduceFlash ? 0.35 : 1, r = 30 + (1 - k) * 90;
+    ctx.save();
+    ctx.globalCompositeOperation = 'lighter';
+    const g = ctx.createRadialGradient(x, y, 0, x, y, r);
+    g.addColorStop(0, `rgba(255,245,220,${0.85 * k * soft})`); g.addColorStop(0.4, `rgba(255,170,90,${0.35 * k * soft})`); g.addColorStop(1, 'rgba(255,120,60,0)');
+    ctx.fillStyle = g; ctx.fillRect(x - r, y - r, r * 2, r * 2);
+    ctx.restore();
+  }
   if (state.flash > 0) {
     ctx.save();
     ctx.globalCompositeOperation = 'lighter';
@@ -966,6 +1068,7 @@ function renderPlay(t) {
   Lighting.coldVignette(ctx, player.waxFrac(), t);
   drawWickRim(ctx, player, t);
   Post.finish(ctx, themeOf(world).name, t);
+  if (state.chroma > 0) drawChroma(ctx, state.chroma);   // the world only, not the UI over it
   // sign bubbles are UI: drawn clean, after the grade and grain
   ctx.save();
   ctx.translate(-cam.x, -cam.y);
@@ -986,8 +1089,11 @@ function renderPlay(t) {
     const shown = state.completeMax - state.completeTimer + (state.cardHeld || 0);
     if (!world.data.finale) UI.drawCompleteCard(ctx, world, state.levelIndex, state.levelStats, shown, state.completeTimer, state.levelResult, Input.lastDevice, world.goal.x - cam.x);
   }
-  if (state.iris < 1) Post.iris(ctx, state.iris, player.cx - cam.x, player.y + player.h / 2 - cam.y);
-  if (state.deathCap && !state.paused) UI.drawDeathCaption(ctx, state.deathCap, player.cx - cam.x, player.y - cam.y);
+  if (state.iris < 1) {
+    if (state.irisWipe) UI.drawWipe(ctx, state.iris, player.alive, t);
+    else Post.iris(ctx, state.iris, player.cx - cam.x, player.y + player.h / 2 - cam.y);
+  }
+  if (state.deathCap && !state.paused) UI.drawDeathCaption(ctx, state.deathCap, player.cx - cam.x, player.y - cam.y, player.feet - cam.y);
   if (state.paused && !state.rotateBlock) {
     const g = UI.glyphs(Input.lastDevice);
     if (state.opts) drawOptions();
@@ -1026,6 +1132,33 @@ function hazardCues(world, player) {
     mothHeard.set(m, state.time);
     Audio.sfx('mothNear', { vol: 1 - d / (3 * T) });
   }
+}
+
+// Moth hit: a two-frame chromatic split, red one way and cyan the other, screened over the
+// frame. Render-only; skipped for reduced flashes and on the lightest quality tier.
+let chromaA = null, chromaB = null;
+function drawChroma(ctx, k) {
+  if (Settings.get().reduceFlash || state.quality === 0) return;
+  const sw = canvas.width >> 1, sh = canvas.height >> 1;
+  if (!chromaA || chromaA.width !== sw || chromaA.height !== sh) {
+    chromaA = document.createElement('canvas'); chromaB = document.createElement('canvas');
+    chromaA.width = chromaB.width = sw; chromaA.height = chromaB.height = sh;
+  }
+  for (const [c, col] of [[chromaA, '#ff3030'], [chromaB, '#30ffff']]) {
+    const g = c.getContext('2d');
+    g.globalCompositeOperation = 'copy';
+    g.drawImage(canvas, 0, 0, sw, sh);
+    g.globalCompositeOperation = 'multiply';
+    g.fillStyle = col; g.fillRect(0, 0, sw, sh);
+  }
+  const d = 5 * k * scale;
+  ctx.save();
+  ctx.setTransform(1, 0, 0, 1, 0, 0);
+  ctx.globalCompositeOperation = 'screen';
+  ctx.globalAlpha = 0.45 * k;
+  ctx.drawImage(chromaA, d, 0, canvas.width, canvas.height);
+  ctx.drawImage(chromaB, -d, 0, canvas.width, canvas.height);
+  ctx.restore();
 }
 
 // tapered additive ribbon behind the flame, stronger the faster Wick moves

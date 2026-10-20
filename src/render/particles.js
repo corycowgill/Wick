@@ -162,6 +162,53 @@ export class Particles {
       });
     }
   }
+  // push-off: two low clouds kicked out sideways and a small ring on the ground
+  jumpPuff(x, y, power = 1) {
+    for (let i = 0; i < 6; i++) {
+      const dir = i % 2 ? 1 : -1;
+      this.add({
+        kind: 'dust', layer: 'world', x: x + dir * 4, y: y - 1,
+        vx: dir * (45 + Math.random() * 55) * power, vy: -6 - Math.random() * 16,
+        drag: 5, life: 0.28 + Math.random() * 0.16, size: 1.8 + Math.random() * 2, grow: 10,
+      });
+    }
+    this.add({ kind: 'shock', layer: 'world', x, y, life: 0.24, size: 14 + 12 * power });
+  }
+  // a footfall at a run: a little puff kicked back from the heel
+  step(x, y, dir, wet = false) {
+    for (let i = 0; i < 2; i++) {
+      this.add({
+        kind: wet ? 'water' : 'dust', layer: 'world', x: x - dir * 5, y: y - 1,
+        vx: -dir * (18 + Math.random() * 34), vy: wet ? -40 - Math.random() * 40 : -6 - Math.random() * 14,
+        g: wet ? 700 : 0, drag: wet ? 0 : 4, life: wet ? 0.25 : 0.24 + Math.random() * 0.12,
+        size: wet ? 1.5 : 1.3 + Math.random() * 1.4, grow: wet ? 0 : 6,
+      });
+    }
+  }
+  // turning hard at a run: dust sprays ahead of the planted paws
+  skid(x, y, dir) {
+    for (let i = 0; i < 5; i++) {
+      this.add({
+        kind: 'dust', layer: 'world', x: x + dir * (4 + i * 2), y: y - 1,
+        vx: dir * (50 + Math.random() * 80), vy: -10 - Math.random() * 30,
+        drag: 4, life: 0.3 + Math.random() * 0.15, size: 1.6 + Math.random() * 2, grow: 7,
+      });
+    }
+  }
+  // the flame going out: bright beads flung out in a ring that slow, hang and fade
+  burst(x, y, color = '255,170,80', n = 12) {
+    for (let i = 0; i < n; i++) {
+      const a = (i / n) * Math.PI * 2 + Math.random() * 0.2, s = 290 + Math.random() * 60;
+      this.add({ kind: 'orb', layer: 'glow', x, y, vx: Math.cos(a) * s, vy: Math.sin(a) * s, drag: 4.6, life: 0.55, size: 3.4, color });
+    }
+    this.add({ kind: 'ring', layer: 'glow', x, y, life: 0.32, size: 64, color });
+  }
+  // the flame catching again: beads swirl in from a ring and pop at the wick
+  gather(x, y, color = '255,190,90', n = 12) {
+    for (let i = 0; i < n; i++) {
+      this.add({ kind: 'gather', layer: 'glow', x, y, cx: x, cy: y, a: (i / n) * Math.PI * 2, r0: 74, life: 0.3, size: 3.2, color });
+    }
+  }
   steam(x, y) {
     this.add({
       kind: 'steam', layer: 'world', x: x + (Math.random() - 0.5) * 10, y,
@@ -246,6 +293,13 @@ export class Particles {
           if (Math.abs(tx - p.x) < 8 && Math.abs(ty - p.y) < 10) p.life = Math.min(p.life, 0.05);
         }
       }
+      if (p.kind === 'gather') {
+        // spiral in, accelerating, onto the centre
+        const t = p.life / p.max, r = p.r0 * t * t, a = p.a + (1 - t) * 2.6;
+        p.x = p.cx + Math.cos(a) * r; p.y = p.cy + Math.sin(a) * r * 0.8;
+        list[k++] = p;
+        continue;
+      }
       if (p.swirlA !== undefined) { p.swirlA += dt * 4; p.vx += Math.cos(p.swirlA) * 160 * dt; }
       if (p.kind === 'firefly' || p.kind === 'straw') {
         p.phase += dt * 1.7;
@@ -276,6 +330,14 @@ export class Particles {
           ctx.beginPath(); ctx.arc(p.x, p.y, p.size * (0.5 + t * 0.5), 0, 6.283); ctx.fill();
           ctx.fillStyle = `rgba(255,130,40,${t * 0.16})`;
           ctx.beginPath(); ctx.arc(p.x, p.y, p.size * 1.9, 0, 6.283); ctx.fill();
+          break;
+        }
+        case 'orb': case 'gather': {
+          const a = p.kind === 'gather' ? Math.min(1, (1 - t) * 4) : t;
+          ctx.fillStyle = `rgba(${p.color},${a * 0.28})`;
+          ctx.beginPath(); ctx.arc(p.x, p.y, p.size * 2.6, 0, 6.283); ctx.fill();
+          ctx.fillStyle = `rgba(255,240,200,${a})`;
+          ctx.beginPath(); ctx.arc(p.x, p.y, p.size * (p.kind === 'gather' ? 0.6 + 0.4 * t : 0.4 + 0.6 * t), 0, 6.283); ctx.fill();
           break;
         }
         case 'firefly': {

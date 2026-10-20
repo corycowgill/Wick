@@ -5,7 +5,7 @@
 export default {
   name: "Cold Quarter",
   hint: "The cold takes its share of you.",
-  par: {"time":65,"wax":11},
+  par: {"time":75,"wax":41},
   theme: "cold",
   ambient: 0.93,
   dark: [[51,76],[101,135]],
@@ -25,9 +25,9 @@ export default {
     '...............WWWWWWWWWWWWWWWWWWWWWWWWWWWWWWWWWWWW...........................#.........................................................WWWWWWWWWWWWWWWWWWWWWWWWW.................',
     '...............WWWWWWWWWWWWWWWWWWWWWWWWWWWWWWWWWWWW...........................#.........................................................WWWWWWWWWWWWWWWWWWWWWWWWW.................',
     '...............WWWWWWWWWWWWWWWWWWWWWWWWWWWWWWWWWWWW...........................#.........................................................WWWWWWWWWWWWWWWWWWWWWWWWW.................',
-    '.#########.....WWWWWWWWWWWWWWWWWWWWWWWWWWWWWWWWWWWW...........................d.........................................................WWWWWWWWWWWWWWWWWWWWWWWWW...........G.....',
-    '.#########.....WWWWWWWWWWWWWWWWWWWWWWWWWWWWWWWWWWWW.....P........K............d...........b.............................................WWWWWWWWWWWWWWWWWWWWWWWWW..###############',
-    '...............WWWWWWWWWWWWWWWWWWWWWWWWWWWWWWWWWWWW.....==......###...........d.....#########...........................................WWWWWWWWWWWWWWWWWWWWWWWWW..###############',
+    '.#########.....WWWWWWWWWWWWWWWWWWWWWWWWWWWWWWWWWWWW...........................d.........................................................WWWWWWWWWWWWWWWWWWWWWWWWW.................',
+    '.#########.....WWWWWWWWWWWWWWWWWWWWWWWWWWWWWWWWWWWW.....P........K............d...........b.............................................WWWWWWWWWWWWWWWWWWWWWWWWW.................',
+    '...............WWWWWWWWWWWWWWWWWWWWWWWWWWWWWWWWWWWW.....==......###...........d.....#########...........................................WWWWWWWWWWWWWWWWWWWWWWWWW...........G.....',
     '...............WWWWWWWWWWWWWWWWWWWWWWWWWWWWWWWWWWWW...........................d.....#########...........................................WWWWWWWWWWWWWWWWWWWWWWWWW..###############',
     '...S....l......WWWWWWWWWWWWWWWWWWWWWWWWWWWWWWWWWWWW.....................o.....d.....#########....T..................................T...WWWWWWWWWWkWWWWWWWWWWWWWW..###############',
     '###############...#########....##########...##################################################################.....########....###################################################',
@@ -38,6 +38,6 @@ export default {
   entities: [
     {"type":"sign","x":68,"y":17,"text":"The plate is under the rain. Let wax hold it."},
     {"type":"moth","x":124,"y":14,"r":2,"period":4.5,"phase":0},
-    {"type":"sign","x":160,"y":17,"text":"One last climb. Build it."},
+    {"type":"sign","x":160,"y":17,"text":"One last climb. Low on wax? Build it."},
   ],
 };

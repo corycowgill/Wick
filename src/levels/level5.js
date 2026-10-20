@@ -5,7 +5,7 @@
 export default {
   name: "Rain Alley",
   hint: "Wait for the drips to pause.",
-  par: {"time":70,"wax":21},
+  par: {"time":70,"wax":47},
   theme: "rain",
   ambient: 0.88,
   dark: [[44,82],[110,128]],
