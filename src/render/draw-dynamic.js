@@ -84,6 +84,7 @@ export function noteWick(p) {
   wick.on = !!(p && p.alive);
   if (wick.on) { wick.x = p.cx; wick.y = p.y + p.h * 0.4; }
 }
+export function wickAt() { return wick; }
 const DANGER = 120;
 function nearWick(m) {
   if (!wick.on) return 0;

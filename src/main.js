@@ -461,7 +461,8 @@ function titleItems() {
 }
 
 function pauseItems() {
-  return ['Resume', 'Restart from torch', 'Restart level', `Sound: ${Audio.muted ? 'Off' : 'On'}`, 'Options', 'Quit to title'];
+  // restarting the level throws away every torch, so it asks twice
+  return ['Resume', 'Restart from torch', state.confirmRestart ? 'Restart level? Choose again' : 'Restart level', `Sound: ${Audio.muted ? 'Off' : 'On'}`, 'Options', 'Quit to title'];
 }
 
 // ---------------------------------------------------------------- options
@@ -674,9 +675,13 @@ function update(dt) {
     Audio.heartbeat(1, false);
     if (input.pausePressed || input.backPressed) { state.paused = false; return; }
     const c = navMenu(6);
+    if (state.sel !== 2) state.confirmRestart = false;
     if (c === 0) state.paused = false;
     else if (c === 1) { respawn(); state.paused = false; }
-    else if (c === 2) { startLevel(state.levelIndex); }
+    else if (c === 2) {
+      if (state.confirmRestart) { state.confirmRestart = false; startLevel(state.levelIndex); }
+      else state.confirmRestart = true;
+    }
     else if (c === 3) Audio.toggleMute();
     else if (c === 4) openOptions('pause');
     else if (c === 5) toTitle();
@@ -684,7 +689,7 @@ function update(dt) {
   }
   const tap = state.tap;
   state.tap = null;
-  if (input.pausePressed) { state.paused = true; state.sel = 0; Audio.setFlame(0, false); Audio.heartbeat(1, false); return; }
+  if (input.pausePressed) { state.paused = true; state.sel = 0; state.confirmRestart = false; Audio.setFlame(0, false); Audio.heartbeat(1, false); return; }
   if (state.hitStop > 0) { state.hitStop--; return; }
 
   if (input.restartPressed && !state.completeTimer) respawn();

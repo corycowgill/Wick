@@ -243,8 +243,8 @@ function drawCanalBridges(ctx, cam, time, lift) {
   const off = cam.x * f;
   for (let i = Math.floor(off / span) - 1; i < Math.floor(off / span) + 3; i++) {
     const x = i * span - off + 60, w = 300;
-    // far arches stay darker and bluer than the near stone, so depth reads right
-    ctx.fillStyle = '#1c2748';
+    // far arches are near-black silhouettes against the sky, so the pale quay reads in front
+    ctx.fillStyle = '#0c1228';
     ctx.beginPath();
     ctx.moveTo(x, base - 90); ctx.lineTo(x + w, base - 90); ctx.lineTo(x + w, base);
     ctx.arc(x + w / 2, base, w * 0.36, 0, Math.PI, true);

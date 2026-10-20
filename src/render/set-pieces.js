@@ -41,7 +41,7 @@ const PIECES = {
   'Clockwork Yard': [['housing', 76, 14, 78, 16], ['clockdais', 93, 8, 98, 10]],
   'Storm Mill': [['race', 80, 8, 83, 10], ['race', 87, 5, 105, 10]],
   'Moth Mill': [['pier', 84, 18, 85, 20]],
-  'Castle Stair': [['battlement', 24, 8, 27, 10]],
+  'Castle Stair': [['battlement', 24, 8, 27, 10], ['runner', 38, 11, 50, 11]],
 };
 // open-cell backdrops behind a piece: [kind, x0, y0, x1, y1]
 const BACKS = {
@@ -49,6 +49,7 @@ const BACKS = {
   'Candle Works': [['pressframe', 95, 4, 98, 9]],
   'Moth Hollow': [['organ', 99, 1, 109, 6]],
   'Bell Tower': [['headstock', 8, 6, 11, 8]],
+  'Castle Stair': [['parapet', 9, 6, 50, 10]],
 };
 
 function canvas(w, h) { const c = document.createElement('canvas'); c.width = w; c.height = h; return c; }
@@ -521,25 +522,83 @@ const PAINT = {
     sh.addColorStop(0, 'rgba(10,8,24,0)'); sh.addColorStop(1, 'rgba(10,8,24,0.6)');
     g.fillStyle = sh; g.fillRect(0, 18, w, h - 18);
   },
-  // the change-over post: a timber pier with iron bands and a lantern hook
+  // the change-over post: three tarred piles bound with iron, a cross brace, striped
+  // cart buffers at ride height on both sides, mooring rings and a stone footing
   pier(g, w, h, r) {
-    g.fillStyle = '#1e1220'; g.fillRect(0, 0, w, h);
-    planksV(g, 0, 0, w, h, ['#4a3044', '#54384c', '#432a3e'], r, w / 4);
-    g.fillStyle = '#3a3044'; g.fillRect(0, 0, w, 6); g.fillStyle = '#7a6a86'; g.fillRect(0, 0.8, w, 1.4);
-    for (let y = 16; y < h; y += 26) { g.fillStyle = '#2c2634'; g.fillRect(0, y, w, 4); for (let x = 5; x < w; x += 10) bolt(g, x, y + 2, 1); }
-    g.fillStyle = 'rgba(160,120,200,0.18)'; g.fillRect(3, 6, 2, h - 6);
+    g.fillStyle = '#140a16'; g.fillRect(0, 0, w, h);
+    const pw = w / 3;
+    for (let i = 0; i < 3; i++) {
+      const x = i * pw, gr = g.createLinearGradient(x, 0, x + pw, 0);
+      gr.addColorStop(0, '#2e1c2e'); gr.addColorStop(0.35, '#5a3c50'); gr.addColorStop(1, '#24142a');
+      g.fillStyle = gr; rr(g, x + 0.8, 3, pw - 1.6, h - 3, 4); g.fill();
+      g.strokeStyle = 'rgba(14,6,16,0.45)'; g.lineWidth = 0.7;
+      g.beginPath(); for (let k = 0; k < 2; k++) { const gx = x + 4 + r() * (pw - 8); g.moveTo(gx, 4); g.bezierCurveTo(gx + 2, h * 0.3, gx - 2, h * 0.6, gx + 1, h); } g.stroke();
+      g.fillStyle = '#7a5a6e'; g.beginPath(); g.ellipse(x + pw / 2, 3.5, pw / 2 - 1.5, 2.6, 0, 0, 6.283); g.fill();
+      g.strokeStyle = 'rgba(30,14,26,0.6)'; g.lineWidth = 0.7; g.beginPath(); g.ellipse(x + pw / 2, 3.5, pw / 4, 1.3, 0, 0, 6.283); g.stroke();
+    }
+    // iron bands
+    for (const y of [14, h * 0.55]) { g.fillStyle = '#2a2632'; g.fillRect(0, y, w, 4.5); g.fillStyle = 'rgba(160,150,180,0.35)'; g.fillRect(0, y, w, 1); for (let x = 5; x < w; x += 10) bolt(g, x, y + 2.3, 0.9); }
+    // a cross brace between the bands
+    g.strokeStyle = '#3a2434'; g.lineWidth = 3;
+    g.beginPath(); g.moveTo(3, 20); g.lineTo(w - 3, h * 0.55 - 2); g.moveTo(w - 3, 20); g.lineTo(3, h * 0.55 - 2); g.stroke();
+    // striped cart buffers where the carts meet the post
+    for (const x of [0, w - 5]) {
+      for (let y = 4, k = 0; y < 26; y += 5.5, k++) { g.fillStyle = k & 1 ? '#e8d8c0' : '#b8302c'; g.fillRect(x, y, 5, 5.5); }
+      g.strokeStyle = OUT; g.lineWidth = 1; g.strokeRect(x + 0.5, 4, 4, 22);
+    }
+    // mooring rings
+    g.strokeStyle = '#9a8ea8'; g.lineWidth = 1.4;
+    for (const x of [w * 0.3, w * 0.7]) { g.beginPath(); g.arc(x, h * 0.55 + 9, 3.2, 0, 6.283); g.stroke(); }
+    // stone footing, damp, with moss
+    g.fillStyle = '#3a2e44'; g.fillRect(0, h - 16, w, 16);
+    for (let x = 0; x < w; x += 16) { g.fillStyle = 'rgba(255,230,240,0.08)'; g.fillRect(x + 1, h - 15, 14, 1.2); g.fillStyle = 'rgba(10,4,16,0.4)'; g.fillRect(x + 15, h - 16, 1, 16); }
+    g.fillStyle = 'rgba(60,120,90,0.5)'; for (let x = 0; x < w; x += 3) g.fillRect(x, h - 17 - r() * 4, 2, 4);
   },
-  // a crenellated merlon on the battlement, its arrow slit lit from inside
+  // the battlement's merlon: great cut blocks with a corbelled cornice, a gilded flame
+  // crest on a crimson shield, two lit arrow slits and moss at the foot
   battlement(g, w, h, r) {
     g.fillStyle = '#1e1020'; g.fillRect(0, 0, w, h);
-    for (let y = 0; y < h; y += 16) for (let x = (y / 16) % 2 ? -16 : 0; x < w; x += 32) block(g, x + 0.6, y + 0.6, 30.8, 14.8, ['#7c6272', '#6e5464', '#886c7c'][(r() * 3) | 0], 0.18, 0.3);
-    g.fillStyle = '#4a3444'; g.fillRect(0, 0, w, 5); g.fillStyle = 'rgba(255,230,220,0.2)'; g.fillRect(0, 0.6, w, 1.2);
-    for (const x of [w * 0.3, w * 0.7]) {
-      g.fillStyle = '#140a14'; rr(g, x - 3, 18, 6, h - 34, 3); g.fill();
-      g.fillStyle = 'rgba(255,170,90,0.65)'; rr(g, x - 1.5, 22, 3, h - 42, 1.5); g.fill();
+    for (let y = 8; y < h; y += 16) for (let x = (y / 16) % 2 ? -16 : 0; x < w; x += 32) block(g, x + 0.6, y + 0.6, 30.8, 14.8, ['#7c6272', '#6e5464', '#886c7c'][(r() * 3) | 0], 0.18, 0.32);
+    // cornice and corbels
+    g.fillStyle = '#5a4050'; g.fillRect(0, 0, w, 8); g.fillStyle = 'rgba(255,232,220,0.25)'; g.fillRect(0, 0.6, w, 1.3);
+    g.fillStyle = '#d9a640'; g.fillRect(0, 7, w, 1.6);
+    for (let x = 4; x < w; x += 12) { g.fillStyle = '#4a3442'; g.beginPath(); g.moveTo(x, 8.5); g.lineTo(x + 8, 8.5); g.lineTo(x + 6, 14); g.lineTo(x + 2, 14); g.closePath(); g.fill(); }
+    // arrow slits, lit from inside
+    for (const x of [w * 0.15, w * 0.85]) {
+      g.fillStyle = '#140a14'; rr(g, x - 3, 22, 6, h - 40, 3); g.fill();
+      g.fillStyle = 'rgba(255,170,90,0.75)'; rr(g, x - 1.5, 26, 3, h - 48, 1.5); g.fill();
+      g.fillStyle = '#140a14'; g.fillRect(x - 6, 22 + (h - 40) / 2 - 1.5, 12, 3);
     }
-    g.fillStyle = '#d9a640'; g.fillRect(0, h - 12, w, 2);
-    g.fillStyle = 'rgba(60,120,90,0.4)'; for (let x = 0; x < w; x += 4) g.fillRect(x, 5, 2, 2 + r() * 5);
+    // the crest: a crimson shield bearing a gold flame
+    const cx = w / 2, cy = h * 0.55;
+    g.fillStyle = OUT;
+    g.beginPath(); g.moveTo(cx - 17, cy - 21); g.lineTo(cx + 17, cy - 21); g.lineTo(cx + 17, cy + 2); g.quadraticCurveTo(cx + 15, cy + 16, cx, cy + 24); g.quadraticCurveTo(cx - 15, cy + 16, cx - 17, cy + 2); g.closePath(); g.fill();
+    g.fillStyle = '#a8242c';
+    g.beginPath(); g.moveTo(cx - 14.5, cy - 18.5); g.lineTo(cx + 14.5, cy - 18.5); g.lineTo(cx + 14.5, cy + 1.5); g.quadraticCurveTo(cx + 12.5, cy + 13.5, cx, cy + 20.5); g.quadraticCurveTo(cx - 12.5, cy + 13.5, cx - 14.5, cy + 1.5); g.closePath(); g.fill();
+    g.strokeStyle = '#d9a640'; g.lineWidth = 1.4; g.stroke();
+    const fl = g.createLinearGradient(0, cy - 14, 0, cy + 12);
+    fl.addColorStop(0, '#fff0b0'); fl.addColorStop(1, '#e8902a');
+    g.fillStyle = fl;
+    g.beginPath(); g.moveTo(cx, cy - 14); g.quadraticCurveTo(cx + 9, cy - 1, cx + 5, cy + 8); g.quadraticCurveTo(cx, cy + 12, cx - 5, cy + 8); g.quadraticCurveTo(cx - 9, cy - 1, cx, cy - 14); g.fill();
+    g.fillStyle = '#a8242c'; g.beginPath(); g.ellipse(cx, cy + 4, 2.5, 4, 0, 0, 6.283); g.fill();
+    // moss at the foot
+    g.fillStyle = 'rgba(60,120,90,0.45)'; for (let x = 0; x < w; x += 3) g.fillRect(x, h - 4 - r() * 6, 2, 6);
+  },
+  // the last stretch of the battlement walk: a crimson runner with gold edging laid
+  // over the stones, leading to the great torch
+  runner(g, w, h, r) {
+    g.fillStyle = '#2c1a2e'; g.fillRect(0, 0, w, h);
+    for (let y = 0; y < h; y += 16) for (let x = (y / 16) % 2 ? -16 : 0; x < w; x += 32) block(g, x + 0.6, y + 0.6, 30.8, 14.8, ['#7c6272', '#6e5464', '#886c7c'][(r() * 3) | 0], 0.16, 0.3);
+    const gr = g.createLinearGradient(0, 0, 0, 7);
+    gr.addColorStop(0, '#c83a3a'); gr.addColorStop(1, '#7a1a24');
+    g.fillStyle = gr; g.fillRect(0, 0, w, 7);
+    g.fillStyle = '#e8b03a'; g.fillRect(0, 0, w, 1.2); g.fillRect(0, 5.6, w, 1);
+    g.fillStyle = 'rgba(255,220,140,0.55)';
+    for (let x = 8; x < w; x += 16) { g.beginPath(); g.moveTo(x, 2); g.lineTo(x + 2, 3.4); g.lineTo(x, 4.8); g.lineTo(x - 2, 3.4); g.closePath(); g.fill(); }
+    // the runner's fringed end hangs a little over the front edge
+    g.fillStyle = '#7a1a24'; g.fillRect(0, 7, w, 6);
+    g.fillStyle = '#e8b03a'; for (let x = 1; x < w; x += 3) g.fillRect(x, 12, 1.2, 3);
+    g.fillStyle = 'rgba(14,4,24,0.3)'; g.fillRect(0, 13, w, 2);
   },
 };
 
@@ -596,6 +655,27 @@ const BACK = {
     g.beginPath(); g.moveTo(8, h); g.lineTo(w / 2, 18); g.lineTo(w - 8, h); g.stroke();
     g.strokeStyle = 'rgba(90,80,90,0.7)'; g.lineWidth = 2;
     g.beginPath(); g.moveTo(w / 2, 18); g.lineTo(w / 2, h - 10); g.arc(w / 2 - 4, h - 10, 4, 0, Math.PI); g.stroke();
+  },
+  // the castle's parapet behind the battlement walk: a dim crenellated wall with
+  // long banners between the merlons, so the last walk feels like the top of a keep
+  parapet(g, w, h) {
+    const top = 18;
+    g.fillStyle = 'rgba(52,30,50,0.92)';
+    g.fillRect(0, top + 22, w, h - top - 22);
+    for (let x = 0; x < w; x += 44) g.fillRect(x, top, 26, 24);
+    g.fillStyle = 'rgba(255,200,170,0.1)';
+    for (let x = 0; x < w; x += 44) g.fillRect(x, top, 26, 1.5);
+    g.fillRect(0, top + 22, w, 1.5);
+    g.fillStyle = 'rgba(20,8,20,0.35)';
+    for (let x = 0; x < w; x += 32) for (let y = top + 38; y < h; y += 16) g.fillRect(x + ((y / 16) % 2) * 16, y, 1, 16);
+    for (let y = top + 38; y < h; y += 16) g.fillRect(0, y, w, 1);
+    // banners hung between the merlons, swallow-tailed
+    for (let x = 30; x < w - 20; x += 132) {
+      g.fillStyle = 'rgba(150,34,44,0.9)';
+      g.beginPath(); g.moveTo(x, top + 24); g.lineTo(x + 14, top + 24); g.lineTo(x + 14, h - 10); g.lineTo(x + 7, h - 18); g.lineTo(x, h - 10); g.closePath(); g.fill();
+      g.fillStyle = 'rgba(217,166,64,0.85)'; g.fillRect(x, top + 24, 14, 2);
+      g.beginPath(); g.moveTo(x + 7, top + 36); g.quadraticCurveTo(x + 12, top + 46, x + 7, top + 52); g.quadraticCurveTo(x + 2, top + 46, x + 7, top + 36); g.fill();
+    }
   },
 };
 
