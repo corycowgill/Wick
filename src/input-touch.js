@@ -5,6 +5,10 @@
 const NAMES = ['left', 'right', 'jump', 'drip', 'absorb', 'pause'];
 export const STICK_RADIUS = 56;     // CSS px of thumb travel for full speed
 export const STICK_DEADZONE = 0.18;
+// the pause button pauses on release; held this long instead, it restarts from the torch
+export const PAUSE_HOLD = 0.6;
+const HOLD_SHOW = 0.12;           // a quick tap never shows the ring
+const now = () => (typeof performance !== 'undefined' ? performance.now() : Date.now()) / 1000;
 
 export class TouchState {
   constructor() {
@@ -14,6 +18,7 @@ export class TouchState {
     for (const n of NAMES) this.held[n] = false;
     this.stick = null;            // { id, ox, oy, dx, dy } while a thumb is on the pad
     this.moveX = 0;               // analog -1..1 from the pad
+    this.hold = null;             // { id, t0, fired } while a finger rests on pause
     this.onChange = null;
   }
   // --- thumb pad: origin where the thumb lands, knob follows it ---
@@ -54,7 +59,8 @@ export class TouchState {
   }
   down(id, name) {
     this.pointers.set(id, name);
-    if (!this.held[name]) this.pressed[name] = true;
+    if (name === 'pause') { if (!this.hold) this.hold = { id, t0: now(), fired: false }; }
+    else if (!this.held[name]) this.pressed[name] = true;
     this.recompute();
   }
   move(id, name) {
@@ -65,9 +71,23 @@ export class TouchState {
   }
   up(id) {
     if (!this.pointers.delete(id)) return;
+    // a tap on pause pauses as the finger lifts; a finished hold already restarted
+    if (this.hold && this.hold.id === id) {
+      if (!this.hold.fired) this.pressed.pause = true;
+      this.hold = null;
+    }
     this.recompute();
   }
+  // once per frame: fires the hold-to-restart, returns how far the ring has filled (0..1)
+  tick(t = now()) {
+    const h = this.hold;
+    if (!h) return 0;
+    const held = t - h.t0;
+    if (!h.fired && held >= PAUSE_HOLD) { h.fired = true; this.pressed.restart = true; }
+    return h.fired ? 1 : Math.max(0, (held - HOLD_SHOW) / (PAUSE_HOLD - HOLD_SHOW));
+  }
   releaseAll() {
+    this.hold = null;              // hidden or cancelled: neither pauses nor restarts
     this.pointers.clear();
     this.stick = null;
     this.moveX = 0;
@@ -127,7 +147,7 @@ export class TouchControls {
       <div class="tc round" id="tc-jump">JUMP</div>
       <div class="tc round" id="tc-drip">DRIP</div>
       <div class="tc round small" id="tc-absorb">SOAK</div>
-      <div class="tc round tiny" id="tc-pause">&#10073;&#10073;</div>`;
+      <div class="tc round tiny" id="tc-pause"><span class="hold"></span>&#10073;&#10073;</div>`;
     parent.appendChild(root);
     this.root = root;
     const $ = (id) => root.querySelector(id);
@@ -157,6 +177,18 @@ export class TouchControls {
       }
     };
     root.addEventListener('contextmenu', (e) => e.preventDefault());
+    this.pauseEl = els.pause;
+    this.holdShown = 0;
+  }
+  // per frame, before input is read: runs the pause hold and draws its fill ring
+  tick() {
+    const k = this.visible && !this.root.classList.contains('preview') ? this.state.tick() : 0;
+    if (k === this.holdShown) return;
+    this.holdShown = k;
+    this.pauseEl.style.setProperty('--hold', `${(k * 360).toFixed(1)}deg`);
+    this.pauseEl.classList.toggle('holding', k > 0);
+    this.pauseEl.classList.toggle('held', k >= 1);
+    if (k >= 1 && navigator.vibrate) try { navigator.vibrate(25); } catch { /* not allowed */ }
   }
   // dim a button that cannot do anything right now (e.g. DRIP without enough wax)
   setEnabled(name, on) {

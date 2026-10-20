@@ -97,6 +97,7 @@ export const Input = {
     const gp = this.gamepad ? this.gamepad.poll() : null;
     const gpp = this.gamepad ? this.gamepad.pressed : {};
     if (this.gamepad && this.gamepad.any) this.setDevice('gamepad');
+    if (this.touch && this.touch.tick) this.touch.tick();      // the pause button's hold-to-restart
     const th = this.touch ? this.touch.state.held : {};
     const tp = this.touch ? this.touch.state.pressed : {};
 
@@ -114,7 +115,7 @@ export const Input = {
     input.dripPressed = !!(kbPressed.drip || tp.drip || gpp.drip);
     input.reabsorbPressed = !!(kbPressed.reabsorb || tp.absorb || gpp.reabsorb);
     input.pausePressed = !!(kbPressed.pause || tp.pause || gpp.pause);
-    input.restartPressed = !!(kbPressed.restart || gpp.restart);
+    input.restartPressed = !!(kbPressed.restart || gpp.restart || tp.restart);
     input.mutePressed = !!(kbPressed.mute || gpp.mute);
     input.upPressed = !!(kbPressed.up || gpp.up);
     input.downPressed = !!(kbPressed.down || gpp.down);

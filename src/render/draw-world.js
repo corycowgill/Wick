@@ -2139,6 +2139,97 @@ function drawDrips(ctx, e) {
   }
 }
 
+// Drip curtains, lit: an additive pass after the lighting so a curtain reads in the dark
+// (the world pass above sits under the darkness). The emitter's lip always glints; while
+// it warms up beads swell on it and a shimmer runs down the column; once it rains the
+// streak heads, the curtain's edges and a splash line where the water lands all catch
+// the light. Reduce-flash keeps the glow steady, low quality skips the soft splash glow.
+let splashGlow = null;
+const dripRuns = new WeakMap();
+export function drawDripGlows(ctx, cam, world, time) {
+  const ems = world.emitters;
+  if (!ems || !ems.length) return;
+  let runs = dripRuns.get(world);
+  if (!runs) {
+    const at = new Set(ems.map((e) => e.ty * world.w + e.tx));
+    runs = new Map(ems.map((e) => [e, [!at.has(e.ty * world.w + e.tx - 1), !at.has(e.ty * world.w + e.tx + 1)]]));
+    dripRuns.set(world, runs);
+  }
+  const still = Settings.get().reduceFlash, soft = Post.quality >= 1;
+  if (soft && !splashGlow) {
+    splashGlow = document.createElement('canvas');
+    splashGlow.width = 64; splashGlow.height = 32;
+    const g = splashGlow.getContext('2d');
+    const r = g.createRadialGradient(32, 16, 0, 32, 16, 32);
+    r.addColorStop(0, 'rgba(170,220,255,0.55)'); r.addColorStop(0.5, 'rgba(140,200,255,0.16)'); r.addColorStop(1, 'rgba(120,180,255,0)');
+    g.fillStyle = r; g.fillRect(0, 0, 64, 32);
+  }
+  ctx.save();
+  ctx.globalCompositeOperation = 'lighter';
+  ctx.lineCap = 'round';
+  for (const e of ems) {
+    if (e.x + T < cam.x - 20 || e.x > cam.x + cam.w + 20 || e.bottom < cam.y - 20 || e.y > cam.y + cam.h + 40) continue;
+    const [edgeL, edgeR] = runs.get(e) || [true, true];
+    const x0 = e.x + 4, x1 = e.x + T - 4, h = e.bottom - e.y;
+    const warm = e.warn ? clamp((e.t - (e.period - 0.6)) / 0.6, 0, 1) : 0;
+    const pulse = still ? 1 : 0.7 + 0.3 * Math.sin(time * 26 + e.tx);
+    // the lip, with beads swelling on it before the rain starts
+    const lip = e.on ? 0.6 : 0.16 + 0.55 * warm * pulse;
+    ctx.strokeStyle = `rgba(160,215,255,${lip})`;
+    ctx.lineWidth = 2;
+    ctx.beginPath(); ctx.moveTo(edgeL ? x0 : e.x, e.y + 1); ctx.lineTo(edgeR ? x1 : e.x + T, e.y + 1); ctx.stroke();
+    if (warm > 0 || e.on) {
+      const br = e.on ? 1.6 : 0.8 + 1.6 * warm;
+      ctx.fillStyle = `rgba(190,230,255,${e.on ? 0.65 : 0.3 + 0.55 * warm})`;
+      ctx.beginPath();
+      for (const bx of [e.x + 9, e.x + 23]) { ctx.moveTo(bx + br, e.y + 2 + br); ctx.arc(bx, e.y + 2 + br, br, 0, 6.283); }
+      ctx.fill();
+    }
+    if (warm > 0) {
+      // warm-up shimmer: faint dashes sliding down the column, and a ghost of the splash line
+      ctx.setLineDash([5, 15]);
+      ctx.lineDashOffset = -time * (still ? 90 : 260);
+      ctx.strokeStyle = `rgba(150,205,255,${0.1 + 0.3 * warm})`;
+      ctx.lineWidth = 1.5;
+      ctx.beginPath();
+      for (const lx of [e.x + 9, e.x + 16, e.x + 23]) { ctx.moveTo(lx, e.y + 4); ctx.lineTo(lx, e.bottom - 2); }
+      ctx.stroke();
+      ctx.setLineDash([]);
+      ctx.strokeStyle = `rgba(170,220,255,${0.35 * warm})`;
+      ctx.beginPath(); ctx.moveTo(x0, e.bottom - 1); ctx.lineTo(x1, e.bottom - 1); ctx.stroke();
+    }
+    if (e.on) {
+      // the curtain: a faint sheen, its outer edges, the splash line and glow
+      ctx.fillStyle = 'rgba(110,170,240,0.07)';
+      ctx.fillRect(edgeL ? x0 : e.x, e.y, (edgeR ? x1 : e.x + T) - (edgeL ? x0 : e.x), h);
+      ctx.strokeStyle = 'rgba(150,205,255,0.22)';
+      ctx.lineWidth = 1;
+      ctx.beginPath();
+      if (edgeL) { ctx.moveTo(x0, e.y); ctx.lineTo(x0, e.bottom); }
+      if (edgeR) { ctx.moveTo(x1, e.y); ctx.lineTo(x1, e.bottom); }
+      ctx.stroke();
+      const sp = still ? 0.6 : 0.5 + 0.2 * Math.sin(time * 40 + e.tx * 3);
+      ctx.strokeStyle = `rgba(200,235,255,${sp})`;
+      ctx.lineWidth = 2;
+      ctx.beginPath(); ctx.moveTo(edgeL ? x0 - 2 : e.x, e.bottom - 1); ctx.lineTo(edgeR ? x1 + 2 : e.x + T, e.bottom - 1); ctx.stroke();
+      if (soft) ctx.drawImage(splashGlow, e.x - 16, e.bottom - 16, 64, 24);
+    }
+    // streak heads catch the light
+    if (e.drops.length) {
+      ctx.strokeStyle = 'rgba(170,220,255,0.4)';
+      ctx.lineWidth = 1.5;
+      ctx.beginPath();
+      for (const d of e.drops) { ctx.moveTo(d.x, d.y - 10); ctx.lineTo(d.x, d.y); }
+      ctx.stroke();
+      ctx.fillStyle = 'rgba(225,245,255,0.85)';
+      ctx.beginPath();
+      for (const d of e.drops) { ctx.moveTo(d.x + 1.4, d.y); ctx.arc(d.x, d.y, 1.4, 0, 6.283); }
+      ctx.fill();
+    }
+  }
+  ctx.restore();
+}
+
 // Cobwebs: each contiguous patch of cobweb cells is drawn as one web, spokes from
 // an off-centre hub out to the patch's corners and edges, with sagging rings. The
 // web is clipped per cell, so cells still burn (and leave holes) one by one.

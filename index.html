@@ -107,6 +107,21 @@
   #tc-drip { width: calc(84px * var(--tc-s)); height: calc(84px * var(--tc-s)); right: calc(var(--sr) + 18px + 112px * var(--tc-s)); bottom: calc(var(--sb) + 18px + 8px * var(--tc-s)); }
   #tc-absorb { width: calc(66px * var(--tc-s)); height: calc(66px * var(--tc-s)); right: calc(var(--sr) + 18px + 18px * var(--tc-s)); bottom: calc(var(--sb) + 18px + 114px * var(--tc-s)); font-size: calc(12px * var(--tc-s)); }
   #tc-pause { width: 50px; height: 50px; right: calc(var(--sr) + 14px); top: calc(env(safe-area-inset-top, 0px) + 12px); font-size: 14px; }
+  /* hold pause to restart from the torch: a ring fills around the button, with a label */
+  #tc-pause .hold {
+    position: absolute; inset: -7px; border-radius: 50%; pointer-events: none; display: none;
+    background: conic-gradient(#ffc850 var(--hold, 0deg), rgba(255, 230, 186, 0.18) 0);
+    -webkit-mask: radial-gradient(farthest-side, transparent calc(100% - 5px), #000 calc(100% - 4.5px));
+    mask: radial-gradient(farthest-side, transparent calc(100% - 5px), #000 calc(100% - 4.5px));
+    filter: drop-shadow(0 0 4px rgba(255, 170, 70, 0.8));
+  }
+  #tc-pause.holding .hold { display: block; }
+  #tc-pause.holding::after {
+    content: "Hold: restart from torch"; position: absolute; right: calc(100% + 14px); top: 50%; transform: translateY(-50%);
+    white-space: nowrap; font: 700 13px "Trebuchet MS", Verdana, sans-serif; color: #fbe9c8;
+    background: rgba(32, 16, 46, 0.9); border: 1.5px solid #d9a640; border-radius: 12px; padding: 4px 10px;
+  }
+  #tc-pause.held::after { content: "↻  Back to the torch"; color: #ffc850; }
   /* left-handed: buttons bottom-left, thumb pad bottom-right (pause stays top-right) */
   #touch.swap #tc-zone { left: auto; right: 0; }
   #touch.swap #tc-pad { left: auto; right: calc(var(--sr) + 96px); }

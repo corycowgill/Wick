@@ -9,7 +9,7 @@ import { Camera } from './render/camera.js';
 import { Lighting } from './render/lighting.js';
 import {
   drawBackground, drawTiles, drawProps, drawEntities, drawSignPosts, drawSignText,
-  drawTileGlows, drawMist, drawForeground, themeOf, drawDripGuide, drawDecor, drawDecorGlows,
+  drawTileGlows, drawMist, drawForeground, themeOf, drawDripGuide, drawDecor, drawDecorGlows, drawDripGlows,
   drawJumpShadow, drawLightDetail, drawWindStreaks, THEMES,
 } from './render/draw-world.js';
 import { drawWick, drawWickFx, drawWickRim, wickMood, wickNudge, wickKnead, wickPurr } from './render/draw-wick.js';
@@ -320,7 +320,26 @@ Events.on('death', (e) => {
   shake(3);
   Input.gamepad.rumble('death');
   noteDeath(e);
+  deathCaption(e);
 });
+
+// What put Wick out, in a few words by the stub and then over Wick at the torch. Presentation
+// only (reads the sim). A tip earned by this death, or one still showing, says it instead.
+const DEATH_CAPS = {
+  water: ['Doused by the drip', '150,205,255'],
+  rain: ['Doused by the rain', '150,205,255'],
+  moth: ['The moths took your flame', '235,215,255'],
+  burnout: ['Burned out: no wax left', '255,150,80'],
+};
+const CAP_LIFE = CFG.DEATH_DELAY + 1.5;
+function deathCaption(e) {
+  const h = state.help;
+  if (h && (h.pending || h.tip)) { state.deathCap = null; return; }
+  let kind = e.reason === 'water' ? (themeOf(state.world).rain ? 'rain' : 'water') : 'burnout';
+  if (kind === 'burnout' && h && state.levelStats.time - h.lastMoth < 3) kind = 'moth';
+  const [text, rgb] = DEATH_CAPS[kind];
+  state.deathCap = { text, rgb, t: 0, life: CAP_LIFE };
+}
 
 // ---------------------------------------------------------------- adaptive help
 // Three deaths near the same spot earn one gentle tip per level visit, picked from how Wick
@@ -408,6 +427,7 @@ function startLevel(i) {
   state.levelResult = null;
   state.keepsakePop = 0;
   state.help = newHelp();
+  state.deathCap = null;
 }
 
 function newGame(i = 0) {
@@ -745,7 +765,8 @@ function update(dt) {
     world.update(dt, player);
     state.stats.time += dt;
     state.levelStats.time += dt;
-    if (!player.alive) state.iris = Math.min(state.iris, Math.max(0, player.deathTimer / 0.35));
+    // the iris holds open for most of the death beat so the cause reads, then shuts fast
+    if (!player.alive) state.iris = Math.min(state.iris, Math.max(0, player.deathTimer / 0.25));
     if (!player.alive && player.deathTimer <= 0) {
       state.stats.deaths++;
       state.levelStats.deaths++;
@@ -763,6 +784,7 @@ function update(dt) {
     }
   }
   if (state.help.tip && (state.help.tip.t += dt) > state.help.tip.life) state.help.tip = null;
+  if (state.deathCap && ((state.deathCap.t += dt) > state.deathCap.life || state.completeTimer)) state.deathCap = null;
 
   camera.update(dt, player, world);
   for (const z of world.windZones()) {
@@ -908,6 +930,7 @@ function renderPlay(t) {
   drawTileGlows(ctx);
   drawLightDetail(ctx, cam, world, lights, t);
   drawDecorGlows(ctx, t);
+  drawDripGlows(ctx, cam, world, t);
   ctx.globalCompositeOperation = 'lighter';
   drawFlameTrail(ctx, player);
   drawMothGlows(ctx, cam, world, t);
@@ -964,12 +987,13 @@ function renderPlay(t) {
     if (!world.data.finale) UI.drawCompleteCard(ctx, world, state.levelIndex, state.levelStats, shown, state.completeTimer, state.levelResult, Input.lastDevice, world.goal.x - cam.x);
   }
   if (state.iris < 1) Post.iris(ctx, state.iris, player.cx - cam.x, player.y + player.h / 2 - cam.y);
+  if (state.deathCap && !state.paused) UI.drawDeathCaption(ctx, state.deathCap, player.cx - cam.x, player.y - cam.y);
   if (state.paused && !state.rotateBlock) {
     const g = UI.glyphs(Input.lastDevice);
     if (state.opts) drawOptions();
     else {
       UI.drawMenu(ctx, 'Paused', pauseItems(), state.sel, {
-        top: H * 0.24, footer: Input.lastDevice === 'touch' ? '' : `${g.restart} restart from torch  ·  M mute`,
+        top: H * 0.24, footer: Input.lastDevice === 'touch' ? 'In play, hold ❚❚ to restart from the torch' : `${g.restart} restart from torch  ·  M mute`,
       });
     }
   }

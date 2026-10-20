@@ -13,7 +13,7 @@ const SANS = '"Trebuchet MS", Verdana, sans-serif';
 const GLYPHS = {
   keyboard: { move: '← →', jump: 'Space', drip: '↓', absorb: 'E', restart: 'R', pause: 'Esc' },
   gamepad: { move: 'Left stick', jump: 'Ⓐ', drip: 'Ⓧ', absorb: 'Ⓑ', restart: 'Ⓨ', pause: 'Menu' },
-  touch: { move: '◀ ▶', jump: 'JUMP', drip: 'DRIP', absorb: 'SOAK', restart: 'Pause → Restart', pause: '❚❚' },
+  touch: { move: '◀ ▶', jump: 'JUMP', drip: 'DRIP', absorb: 'SOAK', restart: 'Hold ❚❚', pause: '❚❚' },
 };
 
 export const UI = {
@@ -732,6 +732,25 @@ export const UI = {
       ctx.fillText(seg.text, x, by + bh / 2 + 1);
       x += seg.w;
     }
+    ctx.restore();
+  },
+
+  // why Wick went out: a small pill above Wick (the stub, then Wick back at the torch)
+  drawDeathCaption(ctx, cap, x, y) {
+    const a = clamp(Math.min(cap.t / 0.12, (cap.life - cap.t) / 0.45), 0, 1);
+    if (a <= 0) return;
+    ctx.save();
+    ctx.globalAlpha = a;
+    ctx.font = `700 15px ${SANS}`;
+    ctx.textAlign = 'center'; ctx.textBaseline = 'middle';
+    const w = ctx.measureText(cap.text).width + 28, h = 28;
+    const bx = clamp(x - w / 2, 12, W - 12 - w);
+    const by = clamp(y - 40 - h - (1 - Math.min(1, cap.t / 0.12)) * 6, 70, H - h - 12);
+    ctx.fillStyle = 'rgba(20,10,32,0.88)';
+    roundRect(ctx, bx, by, w, h, 14); ctx.fill();
+    ctx.strokeStyle = `rgba(${cap.rgb},0.85)`; ctx.lineWidth = 1.5; ctx.stroke();
+    ctx.fillStyle = '#fbe9c8';
+    ctx.fillText(cap.text, bx + w / 2, by + h / 2 + 1);
     ctx.restore();
   },
 
