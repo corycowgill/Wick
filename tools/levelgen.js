@@ -68,17 +68,15 @@ function write(n, meta, g) {
 // and the three ways to drip (step, bridge, lift).
 {
   const g = new Grid(130, 18);
-  g.ground(0, 12, 15).put(3, 14, 'S');
-  g.sign(5, 14, '{move} to walk, {jump} to jump. Wax is your light and your life.');
+  g.ground(0, 12, 15).put(8, 14, 'S');                    // spawn clear of the phone thumb pad
+  g.sign(11, 14, '{move} to walk, {jump} to jump. Wax is your light and your life.');
   g.ground(13, 20, 14).put(17, 13, 'k');
   g.ground(21, 23, 17);
   g.ground(24, 34, 14).put(29, 13, 'T').put(33, 13, 'n');
   g.sign(26, 13, 'Torches relight you and save your place.');
-  g.ground(35, 44, 14).plat(37, 40, 11).put(38, 10, 'P');
-  g.sign(36, 13, 'Pumpkins hold spare wax.');
+  g.ground(35, 44, 14).plat(37, 40, 11).put(38, 10, 'P');   // no sign: a pumpkin up on a plank says "come and get me"
   // the dark lane: steps down, a gap, and back up. Your own light shows the edge.
   g.ground(45, 47, 15).ground(48, 50, 16).ground(54, 58, 14);   // pit 51-53: fall in and walk back out
-  g.sign(44, 14, 'In the dark, only your own light shows the way.');
   g.ground(59, 66, 14).put(64, 13, 'b');
   g.sign(60, 13, 'Too tall? {drip} a step, then hop on it.');
   g.ground(67, 80, 11).put(74, 10, 'T');
@@ -86,11 +84,11 @@ function write(n, meta, g) {
   // 6-wide gap: bridge it. Stairs in the pit lead back if you fall.
   g.ground(81, 81, 13).ground(82, 82, 15).ground(83, 86, 17);
   g.ground(87, 96, 11).put(92, 10, 'h');
-  g.sign(88, 10, 'Across? Turn back: {absorb} soaks a blob up for half its wax.');
+  g.sign(87, 10, 'Across? Turn back: {absorb} soaks a blob up for half its wax.');
   // 4-high wall: stand against it and drip to rise
   g.ground(97, 110, 7).put(103, 6, 'T');
   g.plat(105, 107, 2).put(106, 1, 'K');                 // keepsake: an awning 5 up over the torch. Stack wax to reach it
-  g.sign(94, 10, 'A wall too tall? Stand against it and {drip} to rise.');
+  g.sign(96, 10, 'A wall too tall? Stand against it and {drip} to rise.');
   // the last test puts it all together: bridge a gap, then step up to the stage
   g.ground(111, 114, 9);
   g.ground(115, 115, 12).ground(116, 116, 14).ground(117, 119, 16);   // steps back out of the pit
@@ -107,8 +105,8 @@ function write(n, meta, g) {
 // New idea: moving platforms. Hay lifts and carts run on their own clock.
 {
   const g = new Grid(140, 22);
-  g.ground(0, 12, 18).put(3, 17, 'S');
-  g.sign(5, 17, 'Carts and lifts run on their own. Hop on and ride.');
+  g.ground(0, 12, 18).put(8, 17, 'S');   // spawn clear of the phone thumb pad
+  g.sign(10, 17, 'Carts and lifts run on their own. Hop on and ride.');
   // 1. a cart across a sunken lane (fall in? the steps lead back)
   g.ground(13, 24, 21).ground(14, 14, 20).ground(13, 13, 19);
   g.entities.push({ type: 'mover', x: 13, y: 18, w: 3, to: [22, 18], period: 5, phase: 0 });
@@ -141,11 +139,10 @@ function write(n, meta, g) {
 // New idea: moths. They fly fixed loops, drawn to flame; a brush steals wax.
 {
   const g = new Grid(140, 20);
-  g.ground(0, 11, 16).put(3, 15, 'S');
-  g.sign(5, 15, 'Moths love a flame. A brush steals wax. Learn their loops.');
+  g.ground(0, 11, 16).put(8, 15, 'S');                  // spawn clear of the phone thumb pad
   g.ground(12, 30, 16).put(26, 15, 'h');
   g.entities.push({ type: 'moth', x: 20, y: 9, to: [20, 15], period: 3, phase: 0 });
-  g.sign(14, 15, 'Pass when it rises.');
+  g.sign(13, 15, 'Moths love a flame, and a brush steals wax. Pass this one when it rises.');
   // a 4-wide gap with a moth circling over it
   g.ground(31, 34, 19).put(31, 18, '#');
   g.entities.push({ type: 'moth', x: 33, y: 11, r: 2, period: 4, phase: 0 });
@@ -186,10 +183,10 @@ function write(n, meta, g) {
 {
   const g = new Grid(150, 22);
   const steps = (xe) => { for (let i = 1; i <= 4; i++) g.ground(xe + i, xe + i, 15 + i); };   // escape stairs from the canal bed
-  g.ground(0, 14, 15).rect(1, 11, 7, 14).put(4, 10, 'S').put(2, 10, 'n').put(10, 14, 'l');   // start on the boathouse roof
+  g.ground(0, 14, 15).rect(1, 11, 7, 14).put(6, 10, 'S').put(2, 10, 'n').put(10, 14, 'l');   // start on the boathouse roof, clear of the phone thumb pad
   // canal 1
   g.ground(15, 30, 20); steps(14);
-  g.entities.push({ type: 'mover', x: 15, y: 15, w: 3, to: [27, 15], period: 6, phase: 0, style: 'boat' });
+  g.entities.push({ type: 'mover', x: 15, y: 15, w: 3, to: [27, 15], period: 6, phase: 3.3, style: 'boat' });   // moored as you reach the quay: no dead wait
   g.entities.push({ type: 'moth', x: 22, y: 11, r: 2.5, period: 5, phase: 0 });
   g.ground(31, 44, 15).put(37, 14, 'T').put(42, 14, 'l');
   // canal 2: two ferries meet at a mooring post (walk under it in the canal bed)
@@ -227,9 +224,9 @@ function write(n, meta, g) {
 // wide to jump (leap with the gust, or bridge them the slow way).
 {
   const g = new Grid(138, 20);
-  g.ground(0, 12, 14).put(3, 13, 'S');
-  g.sign(6, 13, 'Leaves swirl before a gust. Wait, then dash.');
-  g.sign(10, 13, 'Fell in? Drip a step to climb back out.');
+  g.ground(0, 12, 14).put(8, 13, 'S');                // spawn clear of the phone thumb pad
+  g.sign(10, 13, 'Leaves swirl before a gust. Wait, then dash.');
+  g.sign(15, 17, 'Fell in? Drip a step to climb back out.');   // down in the valley: only a cat who fell reads it
   g.ground(13, 137, 18);                              // valley floor: 4 below the decks
   const deck = (x0, x1) => {
     g.rect(x0, 14, x1, 14);
@@ -251,7 +248,7 @@ function write(n, meta, g) {
   deck(79, 92);                                       // gap 73-78 (6)
   g.fill(70, 5, 82, 13, 'W');
   g.rect(88, 12, 92, 17).put(89, 11, 'T');            // the second torch, under the signal arm: the far half runs on it
-  g.rect(90, 8, 92, 8).put(91, 7, 'K').put(92, 7, 'P');                 // keepsake: on the signal arm over the torch. Build up to it, out of the wind
+  g.rect(90, 8, 92, 8).put(91, 7, 'K');                 // keepsake: on the signal arm over the torch. Build up to it, out of the wind; no pumpkin to pay for the climb
   // 4. single posts in a headwind: lean into it
   [[96, 14], [99, 13], [102, 12], [105, 13]].forEach(([x, top]) => g.rect(x, top, x, 17));   // each post a little higher
   g.fill(94, 5, 107, 13, 'W');
@@ -280,9 +277,9 @@ function write(n, meta, g) {
 // ---------------------------------------------------------------- rain
 {
   const g = new Grid(150, 20);
-  g.ground(0, 149, 16).put(3, 15, 'S');
+  g.ground(0, 149, 16).put(8, 15, 'S');                       // spawn clear of the phone thumb pad
   g.rect(9, 0, 46, 7).rect(52, 0, 98, 7).rect(104, 0, 140, 7);  // alley roofs
-  g.sign(6, 15, 'Water snuffs your flame. Shelter under anything solid.');
+  g.sign(10, 15, 'Water snuffs your flame. Shelter under anything solid.');
   g.rect(13, 7, 14, 7, '~');                                     // 2-wide curtain
   g.rect(20, 7, 25, 7, '~').plat(22, 23, 13);                    // awning shelter
   g.sign(18, 15, 'Wait under the awning for the rain to pause.');
@@ -294,7 +291,7 @@ function write(n, meta, g) {
   g.sign(50, 15, 'Too high for a small flame? Build a step.');
   g.rect(56, 7, 58, 7, '~');
   g.rect(66, 7, 70, 7, '~').plat(67, 69, 12);
-  g.rect(78, 7, 81, 7, '~');
+  g.rect(78, 7, 81, 7, '~').clear(76, 16, 81, 17);             // a dip under the rain: bridge it with wax, or dash through in a dry spell
   g.ground(84, 90, 13).put(88, 12, 'T');
   g.rect(85, 7, 86, 7, '~');
   g.rect(93, 7, 96, 7, '~').rect(94, 11, 95, 11).put(94, 10, 'K');   // keepsake: a high ledge right under the rain
@@ -314,8 +311,8 @@ function write(n, meta, g) {
 {
   const g = new Grid(120, 26);
   g.rect(0, 0, 119, 5);                                 // roof
-  g.ground(0, 119, 23).put(3, 22, 'S');                 // floor A (walk on row 23)
-  g.sign(6, 22, 'Cobwebs burn away at a touch of flame.');
+  g.ground(0, 119, 23).put(8, 22, 'S');                 // floor A (walk on row 23); spawn clear of the phone thumb pad
+  g.sign(10, 22, 'Cobwebs burn away at a touch of flame.');
   g.rect(14, 18, 15, 22, 'w');
   g.put(20, 22, 'h').put(24, 22, 'h').put(25, 21, 'h');
   g.rect(31, 20, 32, 22);                               // a packed bale stack under the low loft: step up and squeeze over
@@ -362,9 +359,14 @@ function write(n, meta, g) {
 }
 
 // ---------------------------------------------------------------- cold
+// One idea: the storm. Wind and rain, first apart, then on two clocks at once.
+// Intro: the wind over the decks. Develop: the rain street (wax holds the plate under it),
+// then the storm street, where a headwind can pin you inside a curtain: walk in only when
+// both are quiet. Twist: the last gust blows your way, and a tailwind leap carries you
+// through the rain over a gap you could only otherwise bridge in a dry spell.
 {
   const g = new Grid(178, 22);
-  g.ground(0, 14, 18).rect(1, 13, 9, 14).put(3, 17, 'S').put(8, 17, 'l');   // start under a low eave
+  g.ground(0, 14, 18).rect(1, 13, 9, 14).put(7, 17, 'S').put(4, 17, 'l');   // start under a low eave, clear of the phone thumb pad
   const deck = (x0, x1) => {
     g.rect(x0, 18, x1, 18);
     for (let x = x0 + 2; x <= x1 - 1; x += 5) g.rect(x, 19, x, 20);
@@ -383,24 +385,34 @@ function write(n, meta, g) {
   g.sign(68, 17, 'The plate is under the rain. Let wax hold it.');
   g.ground(84, 92, 15).put(90, 14, 'b');
   g.put(97, 17, 'T');
-  // dark pits
+  // the storm street: a headwind under the eaves' curtains. A gust inside a curtain holds you in the rain.
   g.ground(101, 109, 18);
   g.put(110, 20, '#');                                  // pit escape step
   g.ground(115, 122, 18);
   g.ground(127, 135, 18).put(132, 17, 'T');
-  g.entities.push({ type: 'moth', x: 124, y: 14, r: 2, period: 4.5, phase: 0 });   // the only other light in the dark
   g.put(123, 20, '#');
-  // rain + wind run
+  g.rect(101, 0, 133, 9);
+  g.rect(104, 9, 106, 9, '~').rect(117, 9, 119, 9, '~');
+  g.fill(102, 10, 133, 17, 'W');
+  g.sign(101, 17, 'Wind and rain together. Walk in when both are quiet.');
+  // the twist: the last gust blows your way. Leap with it through the drip over the gap, or bridge in a dry spell.
   g.ground(136, 162, 18);
   g.rect(136, 0, 160, 9);
   g.rect(140, 9, 142, 9, '~').rect(150, 9, 153, 9, '~');
-  g.fill(136, 10, 160, 17, 'W');
-  g.put(146, 17, 'k');
+  g.clear(148, 18, 153, 20).put(148, 20, '#');          // the gap, its far half under the drip; a step back out of it
+  g.fill(137, 10, 160, 17, 'W');
+  g.put(145, 17, 'k');
+  g.sign(143, 17, 'A tailwind at last. Leap with it, straight through the rain.');
   g.ground(163, 177, 16).put(172, 15, 'G');
   g.sign(160, 17, 'One last climb. Low on wax? Build it.');
+  g.entities.push(
+    { type: 'wind', dir: -1, phase: 0 },
+    { type: 'wind', dir: -1, phase: 1.1 },
+    { type: 'wind', dir: 1, phase: 0.6 },
+  );
   define('cold', {
     name: 'Cold Quarter', hint: 'The cold takes its share of you.',
-    extra: { theme: 'cold', ambient: 0.93, dark: [[51, 76], [101, 135]], wind: { dir: -1, gust: 1.4, calm: 3.0 } },
+    extra: { theme: 'cold', ambient: 0.93, dark: [[51, 76]], wind: { dir: -1, gust: 1.4, calm: 3.0 } },
   }, g);
 }
 
@@ -409,7 +421,7 @@ function write(n, meta, g) {
   const W = 52, H = 50;
   const g = new Grid(W, H);
   // tiers walk on top of rows 47, 41, 35, 29, 23, 17, 11; stair holes alternate ends
-  g.ground(0, W - 1, 47).put(4, 46, 'S').put(1, 46, 'l').put(7, 46, 'l').put(9, 46, 'n');
+  g.ground(0, W - 1, 47).put(8, 46, 'S').put(1, 46, 'l').put(5, 46, 'l').put(10, 46, 'n');   // spawn clear of the phone thumb pad
   // stairs of one-high steps: any flame can climb them, so the wax goes on the tiers, not the stairs
   const eastStair = (slab) => { g.rect(1, slab, 42, slab).plat(49, 50, slab + 5).plat(47, 48, slab + 4).plat(45, 46, slab + 3).plat(44, 44, slab + 2).plat(43, 43, slab + 1); };
   const westStair = (slab) => { g.rect(9, slab, 50, slab).plat(1, 2, slab + 5).plat(3, 4, slab + 4).plat(5, 6, slab + 3).plat(7, 7, slab + 2).plat(8, 8, slab + 1); };
@@ -454,21 +466,22 @@ function write(n, meta, g) {
 // New idea: soaking wax back. Wide canals eat blobs; soak the ones behind you.
 {
   const g = new Grid(152, 20);
-  const canal = (x0, x1, top) => {
-    // a canal gap with a narrow escape step at its near edge (a fall costs wax, never the run)
-    g.put(x0, 18, '#').put(x0, 17, '#');
-    for (let x = x0 + 1; x <= x1; x++) g.put(x, 19, '#');
-    return top;
+  const canal = (x0, x1, step = true) => {
+    // a canal gap with a narrow escape step at its near edge (a fall costs wax, never the run).
+    // The first three have no step: four deep, a fall costs two lifts, so bridging and soaking
+    // the blobs back is the thrifty way over. That is the lesson.
+    if (step) g.put(x0, 18, '#').put(x0, 17, '#');
+    for (let x = step ? x0 + 1 : x0; x <= x1; x++) g.put(x, 19, '#');
   };
-  g.ground(0, 12, 15).put(3, 14, 'S').put(9, 14, 'l');
-  g.sign(5, 14, 'Wide canals ahead. Bridge them with wax.');
-  canal(13, 18);
-  g.ground(19, 32, 15).put(30, 14, 'l');
+  g.ground(0, 12, 15).put(8, 14, 'S').put(5, 14, 'l');    // spawn clear of the phone thumb pad
+  g.sign(11, 14, 'Wide canals ahead. Bridge them with wax.');
+  canal(13, 17, false);                                   // five wide: one blob and a leap, then soak it back
+  g.ground(18, 32, 15).put(30, 14, 'l');
   g.sign(21, 14, 'Across? Turn back and {absorb} the blob behind you. Half its wax returns.');
-  canal(33, 38);
-  g.ground(39, 48, 15).put(44, 14, 'T').put(47, 14, 'b');
-  canal(49, 55);
-  g.ground(56, 64, 15).put(60, 14, 'l');
+  canal(33, 37, false);
+  g.ground(38, 48, 15).put(44, 14, 'T').put(47, 14, 'b');
+  canal(49, 54, false);                                   // six wide: two blobs now
+  g.ground(55, 64, 15).put(60, 14, 'l');
   // a stepping post mid-canal: one blob each side
   canal(65, 72);
   g.ground(68, 69, 14);
@@ -544,8 +557,8 @@ function write(n, meta, g) {
 {
   const W = 124;
   const g = new Grid(W, 26);
-  g.ground(0, W - 1, 19).put(3, 18, 'S');
-  g.sign(5, 18, 'Fire spreads. Cobwebs, fuses and gates pass the flame along.');
+  g.ground(0, W - 1, 19).put(6, 18, 'S');   // spawn clear of the phone thumb pad
+  g.sign(4, 18, 'Fire spreads. Cobwebs, fuses and gates pass the flame along.');
   // 1. a cobweb clump lights a fuse that climbs over the stall to the gate
   g.rect(9, 17, 10, 18, 'w');
   g.rect(11, 11, 11, 17, 'f').plat(12, 21, 12).rect(12, 11, 21, 11, 'f').rect(21, 12, 21, 14, 'f');
@@ -589,12 +602,11 @@ function write(n, meta, g) {
   const W = 120;
   const g = new Grid(W, 18);
   g.rect(0, 0, W - 1, 3);                                  // factory roof
-  g.ground(0, W - 1, 14).put(3, 13, 'S');
+  g.ground(0, W - 1, 14).put(6, 13, 'S');                  // spawn clear of the phone thumb pad
   const door = (x) => { g.rect(x, 4, x, 10).rect(x, 11, x, 13, 'd'); };
   // A. hold the plate with wax
-  g.sign(5, 13, 'A plate opens its door only while something holds it down.');
+  g.sign(7, 13, 'A plate holds its door open only while something sits on it. Wax will do.');
   g.put(9, 13, 'o');
-  g.sign(11, 13, 'Step off and it shuts. Wax is heavy too.');
   door(14);
   // B. a plate down in a pit
   g.put(18, 13, 'T').put(21, 13, 'b');
@@ -633,12 +645,11 @@ function write(n, meta, g) {
 {
   const W = 116, H = 26;
   const g = new Grid(W, H);
-  g.ground(0, W - 1, 19).put(3, 18, 'S');
+  g.ground(0, W - 1, 19).put(8, 18, 'S');                // spawn clear of the phone thumb pad
   // R1. the fuse hangs high: build up to light it
-  g.sign(5, 18, 'Gates only burn from a fuse. This fuse hangs high.');
-  g.rect(20, 0, 21, 9).rect(20, 10, 21, 18, 'g');
-  g.rect(19, 5, 19, 10, 'f');
-  g.sign(12, 18, 'Build up and touch it with your flame.');
+  g.rect(20, 0, 21, 8).rect(20, 9, 21, 18, 'g');
+  g.rect(19, 4, 19, 9, 'f');                              // a tile higher than a two-blob pillar reaches: build three
+  g.sign(12, 18, 'Gates only burn from a fuse. This one hangs high: build up and touch it.');
   // R2. the cobweb lights a fuse that runs round to the bridge. Run!
   g.put(25, 18, 'l').put(28, 18, 'h');
   g.rect(33, 15, 33, 18, 'w');
@@ -677,11 +688,11 @@ function write(n, meta, g) {
 {
   const W = 100, H = 22;
   const g = new Grid(W, H);
-  g.ground(0, 13, 19).put(3, 18, 'S');
+  g.ground(0, 13, 19).put(6, 18, 'S');   // spawn clear of the phone thumb pad
   g.rect(1, 14, 12, 14).put(1, 18, 'l').put(11, 18, 'l');   // start under the yard gate's lantern arch
   // R1. hold the plate, then ride up to the door before the wax melts
   g.put(9, 18, 'o');
-  g.sign(5, 18, 'The door up top opens from down here.');
+  g.sign(7, 18, 'The door up top opens from down here.');
   g.ground(14, 16, 19);
   g.entities.push({ type: 'mover', x: 14, y: 19, w: 3, to: [14, 11], period: 5, phase: 0 });
   g.ground(17, W - 1, 11);
@@ -718,7 +729,7 @@ function write(n, meta, g) {
 {
   const W = 106, H = 22;
   const g = new Grid(W, H);
-  g.ground(0, W - 1, 18).ground(1, 5, 16).put(3, 15, 'S');   // start on the miller's stoop
+  g.ground(0, W - 1, 18).ground(1, 7, 16).put(6, 15, 'S');   // start on the miller's stoop, clear of the phone thumb pad
   // R1. a plate under the rain: stand on it and you drown, so let wax hold it
   g.rect(8, 0, 26, 8);                                   // mill roof
   g.sign(8, 17, 'Rain on the plate? Wax does not mind the wet.');
@@ -814,7 +825,7 @@ function write(n, meta, g) {
 {
   const W = 116, H = 22;
   const g = new Grid(W, H);
-  g.ground(0, 23, 18).ground(0, 7, 15).put(3, 14, 'S').put(6, 14, 'l');   // start up on the mill bank
+  g.ground(0, 23, 18).ground(0, 7, 15).put(6, 14, 'S').put(2, 14, 'l');   // start up on the mill bank, clear of the phone thumb pad
   // R1. plate under a moth; the cart's run passes through its door
   g.put(15, 17, 'o');
   g.entities.push({ type: 'moth', x: 15, y: 15, r: 2, period: 4, phase: 0 });
@@ -863,12 +874,12 @@ const TORCH_FLOORS = {
 // rounded up to 5s; wax = the bot's finish minus 10 (at least 5). The finish is the route's
 // polished one (the bot tidies its final approach, see tests/bot.js), so it is what the level asks.
 const PAR = {
-  market: { time: 45, wax: 53 }, canal: { time: 50, wax: 52 }, windy: { time: 55, wax: 54 },
-  lifts: { time: 60, wax: 46 }, rain: { time: 70, wax: 47 }, works: { time: 40, wax: 49 },
-  tower: { time: 50, wax: 47 }, moths: { time: 65, wax: 48 }, hay: { time: 75, wax: 48 },
-  firebreak: { time: 45, wax: 43 }, fair: { time: 45, wax: 42 }, ferries: { time: 75, wax: 42 },
-  clockwork: { time: 50, wax: 43 }, stormmill: { time: 50, wax: 42 }, galelocks: { time: 40, wax: 43 },
-  mothmill: { time: 55, wax: 40 }, cold: { time: 75, wax: 41 }, castle: { time: 100, wax: 36 },
+  market: { time: 40, wax: 53 }, canal: { time: 50, wax: 52 }, windy: { time: 60, wax: 47 },
+  lifts: { time: 60, wax: 46 }, rain: { time: 55, wax: 45 }, works: { time: 40, wax: 49 },
+  tower: { time: 50, wax: 47 }, moths: { time: 55, wax: 49 }, hay: { time: 70, wax: 49 },
+  firebreak: { time: 45, wax: 43 }, fair: { time: 40, wax: 46 }, ferries: { time: 70, wax: 41 },
+  clockwork: { time: 50, wax: 43 }, stormmill: { time: 50, wax: 43 }, galelocks: { time: 40, wax: 43 },
+  mothmill: { time: 55, wax: 39 }, cold: { time: 75, wax: 39 }, castle: { time: 100, wax: 36 },
 };
 
 // ---------------------------------------------------------------- write, in play order
