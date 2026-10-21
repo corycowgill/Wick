@@ -5,7 +5,7 @@
 export default {
   name: "Night Ferries",
   hint: "The ferrymen never wait for you.",
-  par: {"time":70,"wax":41},
+  par: {"time":55,"wax":42},
   theme: "canal",
   scene: "harbour",
   ambient: 0.9,
@@ -40,7 +40,7 @@ export default {
     {"type":"moth","x":22,"y":11,"r":2.5,"period":5,"phase":0},
     {"type":"mover","x":45,"y":15,"w":3,"to":[54,15],"period":5,"phase":0,"style":"boat"},
     {"type":"mover","x":59,"y":15,"w":3,"to":[68,15],"period":5,"phase":2.5,"style":"boat"},
-    {"type":"moth","x":57,"y":8,"to":[57,13],"period":3,"phase":0},
+    {"type":"moth","x":57,"y":8,"to":[57,13],"period":5,"phase":2.5},
     {"type":"sign","x":40,"y":14,"text":"Change ferries at the post."},
     {"type":"mover","x":86,"y":15,"w":3,"to":[86,9],"period":5,"phase":0},
     {"type":"moth","x":97,"y":6,"r":2,"period":5,"phase":0},

@@ -194,7 +194,7 @@ function write(n, meta, g) {
   g.rect(57, 15, 58, 16);
   g.entities.push({ type: 'mover', x: 45, y: 15, w: 3, to: [54, 15], period: 5, phase: 0, style: 'boat' });
   g.entities.push({ type: 'mover', x: 59, y: 15, w: 3, to: [68, 15], period: 5, phase: 2.5, style: 'boat' });
-  g.entities.push({ type: 'moth', x: 57, y: 8, to: [57, 13], period: 3, phase: 0 });
+  g.entities.push({ type: 'moth', x: 57, y: 8, to: [57, 13], period: 5, phase: 2.5 });   // on the ferries' clock: it is up every time they meet
   g.sign(40, 14, 'Change ferries at the post.');
   g.ground(71, 85, 15).put(77, 14, 'T').put(82, 14, 'b');
   // the lock: a lift up to the high quay
@@ -389,7 +389,7 @@ function write(n, meta, g) {
   g.ground(101, 109, 18);
   g.put(110, 20, '#');                                  // pit escape step
   g.ground(115, 122, 18);
-  g.ground(127, 135, 18).put(132, 17, 'T');
+  g.ground(126, 135, 18).put(132, 17, 'T');              // a short hop to the torch: the storm is the test here, not the gap
   g.put(123, 20, '#');
   g.rect(101, 0, 133, 9);
   g.rect(104, 9, 106, 9, '~').rect(117, 9, 119, 9, '~');
@@ -399,11 +399,11 @@ function write(n, meta, g) {
   g.ground(136, 162, 18);
   g.rect(136, 0, 160, 9);
   g.rect(140, 9, 142, 9, '~').rect(150, 9, 153, 9, '~');
-  g.clear(148, 18, 153, 20).put(148, 20, '#');          // the gap, its far half under the drip; a step back out of it
+  g.clear(148, 18, 152, 20).put(148, 20, '#');          // the gap, its far half under the drip; a step back out of it
   g.fill(137, 10, 160, 17, 'W');
   g.put(145, 17, 'k');
   g.sign(143, 17, 'A tailwind at last. Leap with it, straight through the rain.');
-  g.ground(163, 177, 16).put(172, 15, 'G');
+  g.ground(163, 177, 15).put(172, 14, 'G');               // three up: after the storm, the last climb asks for wax
   g.sign(160, 17, 'One last climb. Low on wax? Build it.');
   g.entities.push(
     { type: 'wind', dir: -1, phase: 0 },
@@ -877,9 +877,9 @@ const PAR = {
   market: { time: 40, wax: 53 }, canal: { time: 50, wax: 52 }, windy: { time: 60, wax: 47 },
   lifts: { time: 60, wax: 46 }, rain: { time: 55, wax: 45 }, works: { time: 40, wax: 49 },
   tower: { time: 50, wax: 47 }, moths: { time: 55, wax: 49 }, hay: { time: 70, wax: 49 },
-  firebreak: { time: 45, wax: 43 }, fair: { time: 40, wax: 46 }, ferries: { time: 70, wax: 41 },
+  firebreak: { time: 45, wax: 43 }, fair: { time: 40, wax: 46 }, ferries: { time: 55, wax: 42 },
   clockwork: { time: 50, wax: 43 }, stormmill: { time: 50, wax: 43 }, galelocks: { time: 40, wax: 43 },
-  mothmill: { time: 55, wax: 39 }, cold: { time: 75, wax: 39 }, castle: { time: 100, wax: 36 },
+  mothmill: { time: 55, wax: 39 }, cold: { time: 75, wax: 40 }, castle: { time: 100, wax: 36 },
 };
 
 // ---------------------------------------------------------------- write, in play order
